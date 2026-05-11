@@ -34,6 +34,18 @@ const RANK_TRANSITIONS = [
 
 const RANK_OPTIONS = ['オンボーディング','トレーニー','パートナー','リーダー','スペシャリスト','ディレクター'];
 const DEPT_COLORS  = ['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
+const RANK_SALARY = {
+  'オンボーディング':     { base: 1163, bonus: 0 },
+  'トレーニー':           { base: 1300, bonus: 0 },
+  'パートナー':           { base: 1300, bonus: 0 },
+  'リーダー':             { base: 1300, bonus: 0 },
+  'スペシャリスト':       { base: 1300, bonus: 3 },
+  'ディレクター':         { base: 1400, bonus: 5 },
+  'ブランドマネージャー': { base: 1600, bonus: 5 },
+  'ゼネラルマネージャー': { base: 1800, bonus: 5 },
+};
+const ADMIN_PASSWORD = 'boss2024';
+const RANK_CHART_COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#64748b'];
 const EMPTY_ITEM_FORM   = { item_name: '', rank: '', description: '', is_salary_item: false };
 const EMPTY_MEMBER_FORM = { name: '', email: '', rank: '', department: [], mall: '', onboarding_at: '' };
 
@@ -79,6 +91,24 @@ export default function EvaluationProgress() {
   const [mtgMode, setMtgMode]                     = useState(false);
   // item_comments（件数バッジ用のみ親で管理、詳細は ItemCommentsSection で管理）
   const [itemCommentCounts, setItemCommentCounts] = useState({});  // { [item_id]: number }
+
+  // ── 全体タブ グラフモード ──
+  const [overallChartMode, setOverallChartMode] = useState('all'); // 'all'|'rank'|'personal'
+  const [overallIndivUser, setOverallIndivUser] = useState(null);
+
+  // ── 時給タブ ──
+  const [salaryTab, setSalaryTab] = useState('personal'); // 'personal'|'admin'
+
+  // ── NG理由モーダル ──
+  const [ngModal, setNgModal]           = useState(null); // { progressId, evidenceId }
+  const [ngReasonText, setNgReasonText] = useState('');
+
+  // ── クリア計画 ──
+  const [plans, setPlans]               = useState([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [showPlanView, setShowPlanView] = useState(false);
+  const [planForm, setPlanForm]         = useState({ item_id: '', planned_month: '', start_date: '', due_date: '', created_by: '' });
+  const [savingPlan, setSavingPlan]     = useState(false);
 
   // ── メンバー管理タブ ──
   const [membersKey, setMembersKey]     = useState(0);
@@ -127,7 +157,7 @@ export default function EvaluationProgress() {
     if ((view !== 'overall' && view !== 'department') || overallLoaded) return;
     setOverallLoading(true);
     Promise.all([
-      supabase.from('evaluation_progress').select('achieved_month, user_name').eq('status', 'completed').limit(5000),
+      supabase.from('evaluation_progress').select('achieved_month, user_name, item_no').eq('status', 'completed').limit(5000),
       supabase.from('evaluation_progress').select('item_no, created_at, user_name').in('status', ['pending', 'in_progress']).limit(5000),
       supabase.from('evaluation_items').select('no, item_name, rank').limit(1000),
       supabase.from('users').select('id, name, progress_name, rank, department, resigned_at, onboarding_at, trainee_at, partner_at, leader_at, specialist_at, director_at').neq('name', 'テンプレート').limit(200),
@@ -179,18 +209,36 @@ export default function EvaluationProgress() {
     setMobileShowDetail(false);
     const [{ data: progress }, { data: itemDefs }] = await Promise.all([
       supabase.from('evaluation_progress').select('*, evaluation_evidences(*)').eq('user_name', selectedUser.progress_name ?? selectedUser.name).order('item_no', { ascending: true }),
-      supabase.from('evaluation_items').select('no, item_name, description, rank').eq('rank', selectedUser.rank),
+      supabase.from('evaluation_items').select('id, no, item_name, description, rank, is_salary_item').eq('rank', selectedUser.rank),
     ]);
     const itemMap = {};
     (itemDefs || []).forEach(d => { if (d.no != null) itemMap[d.no] = d; });
     const merged = (progress || [])
       .filter(p => itemMap[p.item_no] != null)
-      .map(p => ({ ...p, item_name: itemMap[p.item_no].item_name, description: itemMap[p.item_no].description ?? '' }));
+      .map(p => ({ ...p, item_name: itemMap[p.item_no].item_name, description: itemMap[p.item_no].description ?? '', item_def_id: itemMap[p.item_no].id, is_salary_item: itemMap[p.item_no].is_salary_item ?? false }));
     setItems(merged);
     setLoading(false);
   }, [selectedUser]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
+
+  // ユーザー切り替え時にフィルターをリセット（前ユーザーの絞り込みが残るバグ対策）
+  useEffect(() => {
+    setStatusFilter('all');
+    setMonthFilter('all');
+  }, [selectedUser?.id]);
+
+  // ⑤ クリア計画
+  useEffect(() => {
+    if (!selectedUser || view !== 'personal') return;
+    setPlansLoading(true);
+    supabase.from('evaluation_plans')
+      .select('*, evaluation_items(item_name)')
+      .eq('user_id', selectedUser.id)
+      .neq('status', 'achieved')
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .then(({ data }) => { setPlans(data || []); setPlansLoading(false); });
+  }, [selectedUser, view]);
 
   // ── 個人ビュー集計 ──
   const currentMonthCount = items.filter(i => i.status === 'completed' && i.achieved_month === CURRENT_MONTH).length;
@@ -247,6 +295,36 @@ export default function EvaluationProgress() {
     const departments = [...new Set(Object.values(userDeptMap))].sort();
     const data = months.map(month => { const row = { month }; departments.forEach(d => { row[d] = counts[`${d}||${month}`] || 0; }); return row; });
     return { departments, data };
+  })();
+
+  // ── 個人ビュー: 昇給項目サマリー ──
+  const salarySummary = (() => {
+    const sal = items.filter(i => i.is_salary_item);
+    const done = sal.filter(i => i.status === 'completed').length;
+    return { total: sal.length, done, remaining: sal.length - done };
+  })();
+
+  // ── 全体ビュー: ランク別クリア件数 ──
+  const rankMonthlyData = (() => {
+    if (!allItemDefs.length || !completedProgress.length) return { ranks: [], data: [] };
+    const itemRankMap = {};
+    allItemDefs.forEach(d => { if (d.no != null) itemRankMap[d.no] = d.rank; });
+    const counts = {};
+    completedProgress.forEach(p => {
+      if (!/^\d{4}\/\d{2}$/.test(p.achieved_month ?? '')) return;
+      const rank = itemRankMap[p.item_no];
+      if (!rank) return;
+      const key = `${p.achieved_month}||${rank}`;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    const months = [...new Set(completedProgress.filter(p => /^\d{4}\/\d{2}$/.test(p.achieved_month ?? '')).map(p => p.achieved_month))].sort();
+    const ranks = [...new Set(Object.values(itemRankMap))].filter(Boolean);
+    const data = months.map(month => {
+      const row = { month };
+      ranks.forEach(r => { row[r] = counts[`${month}||${r}`] || 0; });
+      return row;
+    });
+    return { ranks, data };
   })();
 
   // ── 管理タブ: ランク別コメントあり項目数 ──
@@ -326,6 +404,13 @@ export default function EvaluationProgress() {
           confetti({ particleCount: 55, angle: 60,  spread: 55, origin: { x: 0,   y: 0.65 } });
           confetti({ particleCount: 55, angle: 120, spread: 55, origin: { x: 1,   y: 0.65 } });
         }, 350);
+        // 計画を自動達成
+        const item = items.find(i => i.id === id);
+        if (item?.item_def_id && selectedUser?.id) {
+          supabase.from('evaluation_plans').update({ status: 'achieved' })
+            .eq('user_id', selectedUser.id).eq('item_id', item.item_def_id).eq('status', 'planned')
+            .then(() => setPlans(prev => prev.filter(p => p.item_id !== item.item_def_id)));
+        }
       }
     }
   };
@@ -369,14 +454,63 @@ export default function EvaluationProgress() {
       setSelectedItem(prev => prev?.id === progressId ? rmEv(prev) : prev);
     }
   };
-  const updateEvidenceQuality = async (progressId, evidenceId, quality) => {
-    const { error } = await supabase.from('evaluation_evidences').update({ quality }).eq('id', evidenceId);
+  const updateEvidenceQuality = (progressId, evidenceId, quality) => {
+    if (quality === 'bad') {
+      setNgModal({ progressId, evidenceId });
+      setNgReasonText('');
+      return;
+    }
+    supabase.from('evaluation_evidences').update({ quality, ng_reason: null }).eq('id', evidenceId).then(({ error }) => {
+      if (!error) {
+        const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality, ng_reason: null } : e) });
+        setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
+        setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
+      }
+    });
+  };
+
+  const confirmNgReason = async () => {
+    if (!ngModal) return;
+    const { progressId, evidenceId } = ngModal;
+    const reason = ngReasonText.trim() || null;
+    const { error } = await supabase.from('evaluation_evidences').update({ quality: 'bad', ng_reason: reason }).eq('id', evidenceId);
     if (!error) {
-      const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality } : e) });
+      const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality: 'bad', ng_reason: reason } : e) });
       setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
       setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
     }
+    setNgModal(null);
+    setNgReasonText('');
   };
+  const addPlan = async () => {
+    if (!selectedUser || !planForm.item_id || !planForm.due_date) return;
+    setSavingPlan(true);
+    const { data, error } = await supabase.from('evaluation_plans').insert({
+      user_id: selectedUser.id,
+      item_id: planForm.item_id,
+      planned_month: planForm.planned_month || null,
+      start_date: planForm.start_date || null,
+      due_date: planForm.due_date,
+      created_by: planForm.created_by.trim() || 'self',
+      status: 'planned',
+    }).select('*, evaluation_items(item_name)').single();
+    if (!error && data) {
+      setPlans(prev => [...prev, data].sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '')));
+      setPlanForm({ item_id: '', planned_month: '', start_date: '', due_date: '', created_by: '' });
+    }
+    setSavingPlan(false);
+  };
+
+  const achievePlan = async (planId) => {
+    const { error } = await supabase.from('evaluation_plans').update({ status: 'achieved' }).eq('id', planId);
+    if (!error) setPlans(prev => prev.filter(p => p.id !== planId));
+  };
+
+  const deletePlan = async (planId) => {
+    const { error } = await supabase.from('evaluation_plans').delete().eq('id', planId);
+    if (!error) setPlans(prev => prev.filter(p => p.id !== planId));
+  };
+
   const detailProps = selectedItem ? {
     item: selectedItem, onStatusChange: updateStatus, onMemoChange: updateMemo,
     evidenceText: evidenceText[selectedItem.id] ?? '',
@@ -396,7 +530,7 @@ export default function EvaluationProgress() {
       <div className="max-w-full px-4 py-3 flex flex-wrap items-center gap-3">
         <h1 className="text-base font-bold text-slate-800 shrink-0">人事評価</h1>
         <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs shrink-0">
-          {[['personal','個人'],['overall','全体'],['department','部門別'],['admin','管理'],['members','メンバー']].map(([v,l]) => (
+          {[['personal','個人'],['overall','全体'],['department','部門別'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
             <button key={v} onClick={() => setView(v)}
               className={`px-3 py-1.5 transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
             >{l}</button>
@@ -408,18 +542,32 @@ export default function EvaluationProgress() {
         </select>
         {selectedUser?.rank && <span className="bg-indigo-100 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded-full">{selectedUser.rank}</span>}
         {view === 'personal' && (
-          <button
-            onClick={() => setShowPersonalChart(prev => !prev)}
-            className={`text-xs font-bold px-2.5 py-1 rounded-full transition-colors ${
-              showPersonalChart
-                ? 'bg-emerald-700 text-white ring-2 ring-emerald-300'
-                : currentMonthCount > 0
-                  ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                  : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-            }`}
-          >
-            今月 {currentMonthCount}件クリア 📊
-          </button>
+          <>
+            <button
+              onClick={() => setShowPersonalChart(prev => !prev)}
+              className={`text-xs font-bold px-2.5 py-1 rounded-full transition-colors ${
+                showPersonalChart
+                  ? 'bg-emerald-700 text-white ring-2 ring-emerald-300'
+                  : currentMonthCount > 0
+                    ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                    : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+              }`}
+            >
+              今月 {currentMonthCount}件クリア 📊
+            </button>
+            <button
+              onClick={() => { setShowPlanView(prev => !prev); setShowPersonalChart(false); }}
+              className={`text-xs font-bold px-2.5 py-1 rounded-full transition-colors ${
+                showPlanView
+                  ? 'bg-blue-700 text-white ring-2 ring-blue-300'
+                  : plans.length > 0
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+              }`}
+            >
+              計画 {plans.length}件
+            </button>
+          </>
         )}
         {view === 'admin' && selectedUser && (
           <span className="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">投稿者: {selectedUser.name}</span>
@@ -434,6 +582,21 @@ export default function EvaluationProgress() {
   const ListPane = ({ onItemClick, activeId }) => (
     <div className="flex flex-col h-full">
       <div className="bg-white border-b border-slate-200 px-4 py-3 space-y-2 shrink-0">
+        {!loading && salarySummary.total > 0 && (
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-indigo-700">昇給項目の進捗</p>
+              <p className="text-xs font-bold text-indigo-600">{salarySummary.done}/{salarySummary.total}件</p>
+            </div>
+            <div className="w-full bg-indigo-100 rounded-full h-2 mb-1.5">
+              <div className="bg-indigo-500 h-2 rounded-full transition-all"
+                style={{ width: `${salarySummary.total > 0 ? Math.round((salarySummary.done / salarySummary.total) * 100) : 0}%` }} />
+            </div>
+            <p className="text-xs text-indigo-400 text-right">
+              {salarySummary.remaining > 0 ? `残り${salarySummary.remaining}件でランク卒業` : 'ランク卒業達成！'}
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5">
           {FILTER_TABS.map(tab => (
             <button key={tab.value} onClick={() => setStatusFilter(tab.value)}
@@ -577,22 +740,102 @@ export default function EvaluationProgress() {
   // ============================================================
   const OverallView = () => {
     if (overallLoading) return <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">読み込み中...</div>;
+
+    const individualData = overallIndivUser ? (() => {
+      const pName = overallIndivUser.progress_name ?? overallIndivUser.name;
+      const counts = {};
+      completedProgress.filter(p => p.user_name === pName)
+        .forEach(p => { if (/^\d{4}\/\d{2}$/.test(p.achieved_month ?? '')) counts[p.achieved_month] = (counts[p.achieved_month] || 0) + 1; });
+      return Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([month, count]) => ({ month, count }));
+    })() : [];
+
     return (
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
         <section>
-          <h2 className="text-base font-semibold text-slate-700 mb-4">全メンバー 月次クリア数推移</h2>
+          {/* モード切り替えヘッダー */}
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <h2 className="text-base font-semibold text-slate-700">月次クリア数</h2>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
+              {[['all','全体'],['rank','ランク別'],['personal','個人別']].map(([v,l]) => (
+                <button key={v} onClick={() => setOverallChartMode(v)}
+                  className={`px-3 py-1.5 transition-colors ${overallChartMode === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-            {overallMonthlyData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={overallMonthlyData} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip formatter={v => [`${v}件`, 'クリア数']} />
-                  <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 4, fill: '#6366f1' }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>}
+            {/* 全体モード */}
+            {overallChartMode === 'all' && (
+              overallMonthlyData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={overallMonthlyData} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip formatter={v => [`${v}件`, 'クリア数']} />
+                    <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 4, fill: '#6366f1' }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>
+            )}
+
+            {/* ランク別モード */}
+            {overallChartMode === 'rank' && (
+              rankMonthlyData.data.length > 0 ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={rankMonthlyData.data} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {rankMonthlyData.ranks.map((rank, i) => (
+                      <Bar key={rank} dataKey={rank} stackId="a" fill={RANK_CHART_COLORS[i % RANK_CHART_COLORS.length]}
+                        radius={i === rankMonthlyData.ranks.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>
+            )}
+
+            {/* 個人別モード */}
+            {overallChartMode === 'personal' && (
+              <div>
+                <div className="mb-4 flex items-center gap-3">
+                  <label className="text-xs font-medium text-slate-500">メンバー</label>
+                  <select
+                    value={overallIndivUser?.id ?? ''}
+                    onChange={e => setOverallIndivUser(allUsersData.find(u => u.id === e.target.value) ?? null)}
+                    className="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  >
+                    <option value="">選択してください</option>
+                    {allUsersData.filter(u => !u.resigned_at && u.name !== 'テンプレート').map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                  {overallIndivUser?.rank && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{overallIndivUser.rank}</span>}
+                </div>
+                {!overallIndivUser ? (
+                  <p className="text-slate-400 text-sm text-center py-8">メンバーを選択してください</p>
+                ) : individualData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={individualData} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip formatter={v => [`${v}件`, 'クリア数']} />
+                      <Bar dataKey="count" radius={[6,6,0,0]}>
+                        {individualData.map((e, i) => <Cell key={i} fill={e.month === CURRENT_MONTH ? '#6366f1' : '#a5b4fc'} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-slate-400 text-sm text-center py-8">クリアデータがありません</p>
+                )}
+              </div>
+            )}
           </div>
         </section>
         <section>
@@ -888,11 +1131,20 @@ export default function EvaluationProgress() {
               <ListPane onItemClick={setSelectedItem} activeId={selectedItem?.id} />
             </div>
             <div className="overflow-hidden flex flex-col bg-slate-50 relative">
-              {selectedItem && detailProps ? (
+              {selectedItem && detailProps && !showPlanView ? (
                 <>
                   <ItemDetail {...detailProps} onBack={null} />
                   {showPersonalChart && <ChartModal onClose={() => setShowPersonalChart(false)} />}
                 </>
+              ) : showPlanView ? (
+                <PlanPanel
+                  plans={plans} plansLoading={plansLoading}
+                  planForm={planForm} setPlanForm={setPlanForm}
+                  savingPlan={savingPlan} onAddPlan={addPlan}
+                  onAchievePlan={achievePlan} onDeletePlan={deletePlan}
+                  unachievedItems={items.filter(i => i.status !== 'completed' && i.item_def_id)}
+                  selectedUser={selectedUser}
+                />
               ) : showPersonalChart ? (
                 <TimelineGraph />
               ) : (
@@ -907,7 +1159,16 @@ export default function EvaluationProgress() {
               <ListPane onItemClick={item => { setSelectedItem(item); setMobileShowDetail(true); }} activeId={selectedItem?.id} />
             </div>
             <div className={`absolute inset-0 bg-slate-50 transition-transform duration-200 ${mobileShowDetail ? 'translate-x-0' : 'translate-x-full'} relative`}>
-              {selectedItem && detailProps ? (
+              {showPlanView ? (
+                <PlanPanel
+                  plans={plans} plansLoading={plansLoading}
+                  planForm={planForm} setPlanForm={setPlanForm}
+                  savingPlan={savingPlan} onAddPlan={addPlan}
+                  onAchievePlan={achievePlan} onDeletePlan={deletePlan}
+                  unachievedItems={items.filter(i => i.status !== 'completed' && i.item_def_id)}
+                  selectedUser={selectedUser}
+                />
+              ) : selectedItem && detailProps ? (
                 <>
                   <ItemDetail {...detailProps} onBack={() => setMobileShowDetail(false)} />
                   {showPersonalChart && <ChartModal onClose={() => setShowPersonalChart(false)} />}
@@ -975,6 +1236,39 @@ export default function EvaluationProgress() {
       {view === 'members' && (
         <div className="flex-1 overflow-hidden flex flex-col">
           <MembersView key={membersKey} onUsersRefresh={refreshUsers} availableRanks={availableRanks} />
+        </div>
+      )}
+
+      {view === 'salary' && (
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <SalaryView users={users} />
+        </div>
+      )}
+
+      {ngModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <h3 className="text-sm font-semibold text-slate-700">やり直し理由を入力</h3>
+            </div>
+            <div className="p-5">
+              <textarea value={ngReasonText} onChange={e => setNgReasonText(e.target.value)}
+                placeholder="やり直しの理由を入力（任意）..."
+                rows={3} autoFocus
+                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-red-300" />
+              <p className="text-xs text-slate-400 mt-1.5">空白のまま確定することもできます</p>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 flex gap-2">
+              <button onClick={confirmNgReason}
+                className="flex-1 text-sm py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium">
+                やり直し確定
+              </button>
+              <button onClick={() => { setNgModal(null); setNgReasonText(''); }}
+                className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">
+                キャンセル
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1045,6 +1339,7 @@ function ItemDetail({
           <textarea value={localMemo} onChange={e => handleMemoChange(e.target.value)} placeholder="進捗メモ・コメントを入力..." rows={4}
             className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
         </section>
+        <ItemQuestionSection itemId={item.item_def_id} />
         <PeerEvidenceSection itemNo={item.item_no} selfUserName={item.user_name} />
         <section>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
@@ -1078,7 +1373,9 @@ function ItemDetail({
                         </div>
                       </div>
                     </div>
-                    {isBad && <span className="inline-block mt-1.5 text-xs bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">やり直し</span>}
+                    {isBad && <span className="inline-block mt-1.5 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                      やり直し{ev.ng_reason ? `：${ev.ng_reason}` : ''}
+                    </span>}
                   </div>
                 );
               })}
@@ -1803,6 +2100,632 @@ function MembersView({ onUsersRefresh, availableRanks = RANK_OPTIONS }) {
               <button onClick={() => setDeleteTarget(null)} className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">キャンセル</button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ItemQuestionSection — 項目への質問フォーム
+// ============================================================
+function ItemQuestionSection({ itemId }) {
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [userName, setUserName]   = useState('');
+  const [questionText, setQuestionText] = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [expanded, setExpanded]   = useState({});
+
+  useEffect(() => {
+    if (!itemId) return;
+    setLoading(true);
+    supabase.from('item_questions').select('*').eq('item_id', itemId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setQuestions(data || []); setLoading(false); });
+  }, [itemId]);
+
+  const submitQuestion = async () => {
+    if (!questionText.trim() || !userName.trim()) return;
+    setSaving(true);
+    const { data, error } = await supabase.from('item_questions')
+      .insert({ item_id: itemId, user_name: userName.trim(), question: questionText.trim(), status: 'open' })
+      .select().single();
+    if (!error && data) { setQuestions(prev => [data, ...prev]); setQuestionText(''); }
+    setSaving(false);
+  };
+
+  const submitAnswer = async (qId, answer, answeredBy) => {
+    const { error } = await supabase.from('item_questions')
+      .update({ answer, answered_by: answeredBy, status: 'answered' }).eq('id', qId);
+    if (!error) setQuestions(prev => prev.map(q => q.id === qId ? { ...q, answer, answered_by: answeredBy, status: 'answered' } : q));
+  };
+
+  const QuestionItem = ({ q }) => {
+    const [answerText, setAnswerText]   = useState('');
+    const [answererName, setAnswererName] = useState('');
+    const [showForm, setShowForm]       = useState(false);
+    const [submitting, setSubmitting]   = useState(false);
+    const isAnswered = q.status === 'answered';
+    const isOpen = expanded[q.id] ?? false;
+
+    return (
+      <div className={`rounded-xl border p-3 ${isAnswered ? 'bg-green-50 border-green-100' : 'bg-orange-50 border-orange-100'}`}>
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-medium text-slate-700">{q.user_name}</span>
+            <span className="text-xs text-slate-400">{new Date(q.created_at).toLocaleDateString('ja-JP')}</span>
+          </div>
+          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isAnswered ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-600'}`}>
+            {isAnswered ? '回答済み' : '未回答'}
+          </span>
+        </div>
+        {isAnswered ? (
+          <button onClick={() => setExpanded(p => ({ ...p, [q.id]: !p[q.id] }))} className="w-full text-left">
+            {isOpen ? (
+              <>
+                <p className="text-sm text-slate-800 mb-2">Q: {q.question}</p>
+                <div className="bg-white rounded-lg p-2.5 border border-green-200">
+                  <p className="text-xs text-green-700 font-medium">A（{q.answered_by}）</p>
+                  <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{q.answer}</p>
+                </div>
+                <span className="text-xs text-indigo-500 mt-1 inline-block">閉じる ▲</span>
+              </>
+            ) : (
+              <span className="text-xs text-slate-500 line-clamp-1">Q: {q.question} ▼</span>
+            )}
+          </button>
+        ) : (
+          <>
+            <p className="text-sm text-slate-800 mb-2">Q: {q.question}</p>
+            {!showForm ? (
+              <button onClick={() => setShowForm(true)} className="text-xs text-indigo-600 hover:underline">回答する</button>
+            ) : (
+              <div className="space-y-1.5 mt-1">
+                <input type="text" value={answererName} onChange={e => setAnswererName(e.target.value)}
+                  placeholder="回答者名..."
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                <textarea value={answerText} onChange={e => setAnswerText(e.target.value)}
+                  placeholder="回答内容..." rows={2}
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                <div className="flex gap-1.5">
+                  <button onClick={async () => {
+                    if (!answerText.trim() || !answererName.trim()) return;
+                    setSubmitting(true);
+                    await submitAnswer(q.id, answerText.trim(), answererName.trim());
+                    setSubmitting(false); setShowForm(false);
+                  }} disabled={submitting || !answerText.trim() || !answererName.trim()}
+                    className="text-xs px-2.5 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-40">
+                    {submitting ? '...' : '回答する'}
+                  </button>
+                  <button onClick={() => setShowForm(false)} className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg">キャンセル</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  if (!itemId) return null;
+
+  return (
+    <section>
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+        みんなへの質問{questions.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({questions.length}件)</span>}
+      </p>
+      <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-3 space-y-2">
+        <input type="text" value={userName} onChange={e => setUserName(e.target.value)} placeholder="投稿者名..."
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        <textarea value={questionText} onChange={e => setQuestionText(e.target.value)}
+          placeholder="この項目について質問してください..." rows={2}
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        <button onClick={submitQuestion} disabled={saving || !questionText.trim() || !userName.trim()}
+          className="w-full text-sm py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40">
+          {saving ? '投稿中...' : '質問する'}
+        </button>
+      </div>
+      {loading ? <p className="text-xs text-slate-400 text-center py-3">読み込み中...</p>
+        : questions.length === 0 ? <p className="text-xs text-slate-400 text-center py-3">まだ質問がありません</p>
+        : <div className="space-y-2">{questions.map(q => <QuestionItem key={q.id} q={q} />)}</div>}
+    </section>
+  );
+}
+
+// ============================================================
+// PlanPanel — クリア計画
+// ============================================================
+function PlanPanel({ plans, plansLoading, planForm, setPlanForm, savingPlan, onAddPlan, onAchievePlan, onDeletePlan, unachievedItems, selectedUser }) {
+  const now = new Date();
+  const getDaysLeft = (due) => due ? Math.ceil((new Date(due) - now) / 86400000) : null;
+  const daysStyle = (d) => d === null ? '' : d < 0 ? 'text-red-500 font-semibold' : d <= 7 ? 'text-orange-500 font-semibold' : 'text-green-600';
+  const daysLabel = (d) => d === null ? '' : d < 0 ? `${Math.abs(d)}日超過` : d === 0 ? '今日が期限' : `あと${d}日`;
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold text-slate-700">{selectedUser?.name} のクリア計画</h2>
+        <p className="text-xs text-slate-400 mb-4">期限を設定して項目クリアを管理します</p>
+      </div>
+      <div className="space-y-2">
+        {plansLoading ? <p className="text-sm text-slate-400 text-center py-6">読み込み中...</p>
+          : plans.length === 0 ? <p className="text-sm text-slate-400 text-center py-6">計画がありません</p>
+          : plans.map(plan => {
+            const days = getDaysLeft(plan.due_date);
+            return (
+              <div key={plan.id} className={`bg-white rounded-xl border p-3 shadow-sm ${days !== null && days < 0 ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-800 leading-snug">{plan.evaluation_items?.item_name ?? '(不明)'}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      {plan.due_date && <span className="text-xs text-slate-500">期限: {plan.due_date}</span>}
+                      {days !== null && <span className={`text-xs ${daysStyle(days)}`}>{daysLabel(days)}</span>}
+                      {plan.planned_month && <span className="text-xs text-indigo-500">予定月: {plan.planned_month}</span>}
+                      {plan.created_by && plan.created_by !== 'self' && <span className="text-xs text-slate-400">担当: {plan.created_by}</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button onClick={() => onAchievePlan(plan.id)} className="text-xs px-2 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">達成</button>
+                    <button onClick={() => onDeletePlan(plan.id)} className="text-xs px-2 py-1 bg-white border border-slate-300 text-slate-500 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors">削除</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-slate-700">計画を追加</h3>
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1">項目を選択 *</label>
+          <select value={planForm.item_id} onChange={e => setPlanForm(p => ({ ...p, item_id: e.target.value }))}
+            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            <option value="">選択してください</option>
+            {unachievedItems.map(i => (
+              <option key={i.item_def_id} value={i.item_def_id}>#{i.item_no} {i.item_name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">期限 *</label>
+            <input type="date" value={planForm.due_date} onChange={e => setPlanForm(p => ({ ...p, due_date: e.target.value }))}
+              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">予定月</label>
+            <input type="text" value={planForm.planned_month} onChange={e => setPlanForm(p => ({ ...p, planned_month: e.target.value }))}
+              placeholder="2026/06"
+              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">開始日</label>
+            <input type="date" value={planForm.start_date} onChange={e => setPlanForm(p => ({ ...p, start_date: e.target.value }))}
+              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">作成者</label>
+            <input type="text" value={planForm.created_by} onChange={e => setPlanForm(p => ({ ...p, created_by: e.target.value }))}
+              placeholder="self または担当者名"
+              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+        </div>
+        <button onClick={onAddPlan} disabled={savingPlan || !planForm.item_id || !planForm.due_date}
+          className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
+          {savingPlan ? '保存中...' : '計画を追加'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// SalaryView — 時給管理タブ（2ペインレイアウト）
+// ============================================================
+function SalaryView({ users }) {
+  const [salaryUser, setSalaryUser]         = useState(null);
+  const [salaryHistory, setSalaryHistory]   = useState([]);
+  const [completedByMonth, setCompletedByMonth] = useState({});
+  const [salaryLoading, setSalaryLoading]   = useState(false);
+  const [toggling, setToggling]             = useState(null); // month being toggled
+
+  // 管理者ビュー
+  const [adminUnlocked, setAdminUnlocked]   = useState(false);
+  const [adminInput, setAdminInput]         = useState('');
+  const [adminPwError, setAdminPwError]     = useState(false);
+  const [adminTab, setAdminTab]             = useState('list');
+  const [allSalaryData, setAllSalaryData]   = useState([]);
+  const [adminLoading, setAdminLoading]     = useState(false);
+  const [adminMonth, setAdminMonth]         = useState(CURRENT_MONTH);
+  const [bulkUsers, setBulkUsers]           = useState([]);
+  const [bulkRate, setBulkRate]             = useState('');
+  const [bulkNote, setBulkNote]             = useState('');
+  const [bulkSaving, setBulkSaving]         = useState(false);
+
+  // ビュー切り替え: 'personal' | 'admin'
+  const [salaryView, setSalaryView]         = useState('personal');
+
+  useEffect(() => { if (users.length && !salaryUser) setSalaryUser(users[0]); }, [users]);
+
+  useEffect(() => {
+    if (!salaryUser) return;
+    setSalaryLoading(true);
+    const pName = salaryUser.progress_name ?? salaryUser.name;
+    Promise.all([
+      supabase.from('hourly_rate_history').select('*').eq('user_id', salaryUser.id).order('month'),
+      supabase.from('evaluation_progress').select('achieved_month').eq('user_name', pName).eq('status', 'completed').not('achieved_month', 'is', null),
+    ]).then(([hRes, pRes]) => {
+      setSalaryHistory(hRes.data || []);
+      const counts = {};
+      (pRes.data || []).forEach(p => { if (/^\d{4}\/\d{2}$/.test(p.achieved_month)) counts[p.achieved_month] = (counts[p.achieved_month] || 0) + 1; });
+      setCompletedByMonth(counts);
+      setSalaryLoading(false);
+    });
+  }, [salaryUser]);
+
+  useEffect(() => { if (salaryView === 'admin' && adminUnlocked) loadAdminData(); }, [salaryView, adminUnlocked]);
+
+  const loadAdminData = async () => {
+    setAdminLoading(true);
+    const { data } = await supabase.from('hourly_rate_history')
+      .select('id, user_id, month, base_rate, item_bonus, total_rate, confirmed, note, users(name, rank)')
+      .order('month').limit(5000);
+    setAllSalaryData(data || []);
+    setAdminLoading(false);
+  };
+
+  const getRankInfo = (rank) => RANK_SALARY[rank] ?? { base: 1163, bonus: 0 };
+
+  const calcMonth = (month, user) => {
+    const { base, bonus } = getRankInfo(user?.rank ?? '');
+    const count = completedByMonth[month] || 0;
+    return { base_rate: base, item_bonus: bonus * count, total: base + bonus * count };
+  };
+
+  // 確定/未確定トグル
+  const toggleConfirm = async (month) => {
+    if (!salaryUser || toggling) return;
+    setToggling(month);
+    const existing = salaryHistory.find(h => h.month === month);
+    if (existing) {
+      const newConfirmed = !existing.confirmed;
+      await supabase.from('hourly_rate_history').update({ confirmed: newConfirmed }).eq('id', existing.id);
+      setSalaryHistory(prev => prev.map(h => h.month === month ? { ...h, confirmed: newConfirmed } : h));
+    } else {
+      const { base_rate, item_bonus } = calcMonth(month, salaryUser);
+      const { data } = await supabase.from('hourly_rate_history')
+        .insert({ user_id: salaryUser.id, month, base_rate, item_bonus, confirmed: true })
+        .select().single();
+      if (data) setSalaryHistory(prev => [...prev, data].sort((a, b) => a.month.localeCompare(b.month)));
+    }
+    setToggling(null);
+  };
+
+  // 今月の時給を計算してDBに保存（未確定で保存）
+  const calcAndSave = async () => {
+    if (!salaryUser || toggling) return;
+    setToggling(CURRENT_MONTH);
+    const { base_rate, item_bonus } = calcMonth(CURRENT_MONTH, salaryUser);
+    await supabase.from('hourly_rate_history').upsert(
+      { user_id: salaryUser.id, month: CURRENT_MONTH, base_rate, item_bonus, confirmed: false },
+      { onConflict: 'user_id,month' }
+    );
+    const { data } = await supabase.from('hourly_rate_history').select('*').eq('user_id', salaryUser.id).order('month');
+    setSalaryHistory(data || []);
+    setToggling(null);
+  };
+
+  const unlockAdmin = () => {
+    if (adminInput === ADMIN_PASSWORD) { setAdminUnlocked(true); setAdminInput(''); setAdminPwError(false); }
+    else setAdminPwError(true);
+  };
+
+  const handleBulkUpdate = async () => {
+    if (!bulkUsers.length || !bulkRate) return;
+    setBulkSaving(true);
+    for (const uid of bulkUsers) {
+      await supabase.from('hourly_rate_history').upsert(
+        { user_id: uid, month: adminMonth, base_rate: parseInt(bulkRate), item_bonus: 0, confirmed: false, note: bulkNote || null },
+        { onConflict: 'user_id,month' }
+      );
+    }
+    await loadAdminData();
+    setBulkUsers([]); setBulkRate(''); setBulkNote('');
+    setBulkSaving(false);
+  };
+
+  const exportCsv = () => {
+    const rows = [
+      ['名前','月','基本時給','ボーナス','合計'],
+      ...allSalaryData.filter(d => d.month === adminMonth).map(d => [
+        d.users?.name ?? d.user_id, d.month,
+        d.base_rate, d.item_bonus ?? 0,
+        d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0)),
+      ])
+    ];
+    const blob = new Blob(['﻿' + rows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `salary_${adminMonth.replace('/', '-')}.csv`; a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const allMonths = [...new Set([...Object.keys(completedByMonth), ...salaryHistory.map(h => h.month), CURRENT_MONTH])].sort();
+  const chartData = allMonths.map(month => {
+    const hist = salaryHistory.find(h => h.month === month);
+    return {
+      month,
+      total: hist ? (hist.total_rate ?? hist.base_rate + (hist.item_bonus ?? 0)) : calcMonth(month, salaryUser).total,
+      confirmed: hist?.confirmed ?? false,
+    };
+  });
+  const adminMonths = [...new Set([CURRENT_MONTH, ...allSalaryData.map(d => d.month)])].sort().reverse();
+  const adminMonthData = allSalaryData.filter(d => d.month === adminMonth);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* ビュー切り替えヘッダー */}
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 shrink-0">
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
+          {[['personal','個人時給'],['admin','管理者ビュー']].map(([v,l]) => (
+            <button key={v} onClick={() => setSalaryView(v)}
+              className={`px-3 py-1.5 transition-colors ${salaryView === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 個人ビュー */}
+      {salaryView === 'personal' && (
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+          {/* 左ペイン: ユーザー選択 + 履歴一覧 */}
+          <div className="md:w-80 lg:w-96 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 space-y-2 shrink-0">
+              <label className="text-xs font-medium text-slate-500 block">メンバーを選択</label>
+              <select value={salaryUser?.id ?? ''} onChange={e => setSalaryUser(users.find(u => u.id === e.target.value) ?? null)}
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              {salaryUser?.rank && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{salaryUser.rank}</span>
+                  {(() => {
+                    const { base, bonus } = getRankInfo(salaryUser.rank);
+                    return <span className="text-xs text-slate-500">基本 {base.toLocaleString()}円{bonus > 0 ? ` + ${bonus}円/件` : ''}</span>;
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* 月次履歴リスト */}
+            <div className="flex-1 overflow-y-auto">
+              {salaryLoading ? (
+                <div className="text-center py-12 text-slate-400 text-sm">読み込み中...</div>
+              ) : allMonths.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-sm">データなし</div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {[...allMonths].reverse().map(month => {
+                    const hist = salaryHistory.find(h => h.month === month);
+                    const calc = calcMonth(month, salaryUser);
+                    const base = hist?.base_rate ?? calc.base_rate;
+                    const bonusVal = hist?.item_bonus ?? calc.item_bonus;
+                    const total = hist?.total_rate ?? (base + bonusVal);
+                    const isConfirmed = hist?.confirmed ?? false;
+                    const isCurrent = month === CURRENT_MONTH;
+                    return (
+                      <div key={month} className={`px-4 py-3 ${!isConfirmed ? 'bg-yellow-50' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-slate-700">
+                            {month}{isCurrent && <span className="ml-1 text-xs text-indigo-500 font-normal">今月</span>}
+                          </span>
+                          <button
+                            onClick={() => toggleConfirm(month)}
+                            disabled={toggling === month}
+                            className={`text-xs px-2.5 py-1 rounded-lg border transition-colors font-medium ${
+                              toggling === month ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' :
+                              isConfirmed
+                                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300'
+                            }`}
+                          >
+                            {toggling === month ? '...' : isConfirmed ? '✓ 確定済み' : '− 未確定'}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-slate-500">
+                          <span>{base.toLocaleString()}円</span>
+                          {bonusVal > 0 && <span className="text-green-600">+{bonusVal}円</span>}
+                          <span className="font-semibold text-slate-700 text-sm">{total.toLocaleString()}円</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 右ペイン: グラフ + 計算ボタン */}
+          <div className="flex-1 overflow-y-auto bg-slate-50 p-5 space-y-5">
+            {salaryUser && (() => {
+              const { base, bonus } = getRankInfo(salaryUser.rank ?? '');
+              const curCalc = calcMonth(CURRENT_MONTH, salaryUser);
+              const curCount = completedByMonth[CURRENT_MONTH] ?? 0;
+              return (
+                <>
+                  {/* 今月サマリー */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">今月 ({CURRENT_MONTH}) の時給</p>
+                    <div className="flex flex-wrap gap-3 mb-4">
+                      {[
+                        { label: '基本時給', value: `${base.toLocaleString()}円` },
+                        { label: '今月クリア', value: `${curCount}件`, hi: curCount > 0 },
+                        { label: 'ボーナス', value: `${(bonus * curCount).toLocaleString()}円`, hi: bonus * curCount > 0 },
+                        { label: '推定時給', value: `${curCalc.total.toLocaleString()}円`, bold: true },
+                      ].map(s => (
+                        <div key={s.label} className={`rounded-xl px-4 py-3 text-center border flex-1 min-w-[80px] ${s.bold ? 'bg-indigo-50 border-indigo-200' : s.hi ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-100'}`}>
+                          <p className={`text-lg font-bold ${s.bold ? 'text-indigo-700' : 'text-slate-800'}`}>{s.value}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={calcAndSave} disabled={!!toggling}
+                      className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
+                      {toggling === CURRENT_MONTH ? '保存中...' : '今月の時給を計算して保存'}
+                    </button>
+                  </div>
+
+                  {/* 時給推移グラフ */}
+                  {chartData.length > 0 && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">時給推移</p>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={chartData} margin={{ top: 4, right: 16, left: -16, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                          <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
+                          <Tooltip formatter={v => [`${Number(v).toLocaleString()}円`, '時給']} />
+                          <Line type="monotone" dataKey="total" stroke="#6366f1" strokeWidth={2.5}
+                            dot={({ cx, cy, payload, index }) => (
+                              <circle key={index} cx={cx} cy={cy} r={5}
+                                fill={payload.confirmed ? '#6366f1' : '#fff'}
+                                stroke="#6366f1" strokeWidth={2} />
+                            )} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <p className="text-xs text-slate-400 mt-1.5">
+                        塗りつぶし ◆ 確定済み　白抜き ◇ 未確定
+                      </p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* 管理者ビュー */}
+      {salaryView === 'admin' && (
+        <div className="flex-1 overflow-y-auto p-5">
+          {!adminUnlocked ? (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 max-w-sm mx-auto mt-8">
+              <h3 className="text-sm font-semibold text-slate-700 mb-1">管理者認証</h3>
+              <p className="text-xs text-slate-400 mb-4">パスワードを入力してください</p>
+              <div className="flex gap-2">
+                <input type="password" value={adminInput} onChange={e => setAdminInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && unlockAdmin()} placeholder="パスワード"
+                  className={`flex-1 text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 ${adminPwError ? 'border-red-400' : 'border-slate-300'}`} />
+                <button onClick={unlockAdmin} className="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">確認</button>
+              </div>
+              {adminPwError && <p className="text-xs text-red-500 mt-2">パスワードが違います</p>}
+            </div>
+          ) : (
+            <div className="space-y-4 max-w-5xl mx-auto">
+              {/* 月選択 + タブ + CSV */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="flex items-center border-b border-slate-200 px-4">
+                  {[['list','一覧'],['bulk','一括更新']].map(([v,l]) => (
+                    <button key={v} onClick={() => setAdminTab(v)}
+                      className={`text-sm px-4 py-3 font-medium transition-colors border-b-2 ${adminTab === v ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                      {l}
+                    </button>
+                  ))}
+                  <div className="flex-1" />
+                  <div className="flex items-center gap-2 py-2">
+                    <label className="text-xs text-slate-500">月</label>
+                    <select value={adminMonth} onChange={e => setAdminMonth(e.target.value)}
+                      className="text-xs border border-slate-300 rounded px-2 py-1 bg-white focus:outline-none">
+                      {adminMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <button onClick={exportCsv}
+                      className="text-xs px-3 py-1.5 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors">
+                      CSVエクスポート
+                    </button>
+                  </div>
+                </div>
+
+                {/* 一覧タブ */}
+                {adminTab === 'list' && (
+                  <div className="overflow-x-auto">
+                    {adminLoading ? <p className="text-sm text-slate-400 text-center py-8">読み込み中...</p> : (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50">
+                            {['名前','ランク','基本時給','ボーナス','合計','確定','メモ'].map(h => (
+                              <th key={h} className={`py-2.5 px-4 text-slate-500 font-medium ${['基本時給','ボーナス','合計'].includes(h) ? 'text-right' : h === '確定' ? 'text-center' : 'text-left'}`}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adminMonthData.length === 0 ? (
+                            <tr><td colSpan={7} className="text-center py-8 text-slate-400">この月のデータがありません</td></tr>
+                          ) : adminMonthData.map(d => (
+                            <tr key={d.id} className={`border-b border-slate-100 ${!d.confirmed ? 'bg-yellow-50' : ''}`}>
+                              <td className="py-2.5 px-4 font-medium text-slate-700">{d.users?.name ?? '−'}</td>
+                              <td className="py-2.5 px-4 text-slate-500">{d.users?.rank ?? '−'}</td>
+                              <td className="py-2.5 px-4 text-right">{(d.base_rate ?? 0).toLocaleString()}円</td>
+                              <td className="py-2.5 px-4 text-right text-green-600">+{d.item_bonus ?? 0}円</td>
+                              <td className="py-2.5 px-4 text-right font-semibold">{(d.total_rate ?? (d.base_rate ?? 0) + (d.item_bonus ?? 0)).toLocaleString()}円</td>
+                              <td className="py-2.5 px-4 text-center">
+                                {d.confirmed
+                                  ? <span className="text-green-600 font-medium">確定</span>
+                                  : <span className="text-amber-500 font-medium">未確定</span>}
+                              </td>
+                              <td className="py-2.5 px-4 text-slate-400">{d.note ?? ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+
+                {/* 一括更新タブ */}
+                {adminTab === 'bulk' && (
+                  <div className="p-5 space-y-4">
+                    <p className="text-sm text-slate-600">対象月 <span className="font-semibold text-indigo-600">{adminMonth}</span> の基本時給を一括更新します</p>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-2">対象メンバーを選択</label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                        {users.map(u => (
+                          <label key={u.id} className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={bulkUsers.includes(u.id)}
+                              onChange={e => setBulkUsers(prev => e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id))}
+                              className="w-3.5 h-3.5 accent-indigo-600" />
+                            <span className="text-xs text-slate-700 truncate">{u.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <button onClick={() => setBulkUsers(bulkUsers.length === users.length ? [] : users.map(u => u.id))}
+                        className="text-xs text-indigo-600 hover:underline mt-1">
+                        {bulkUsers.length === users.length ? '全解除' : '全選択'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">基本時給 (円) *</label>
+                        <input type="number" value={bulkRate} onChange={e => setBulkRate(e.target.value)} placeholder="例: 1300"
+                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">メモ（任意）</label>
+                        <input type="text" value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="例: 最低賃金改定"
+                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                      </div>
+                    </div>
+                    <button onClick={handleBulkUpdate} disabled={bulkSaving || !bulkUsers.length || !bulkRate}
+                      className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
+                      {bulkSaving ? '更新中...' : `${bulkUsers.length}名 の基本時給を更新`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
