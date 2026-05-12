@@ -236,6 +236,23 @@ export default function EvaluationProgress() {
     return true;
   }, []);
 
+  const deleteAdminItem = async (item) => {
+    // 関連データを順番に削除
+    const { data: progressRows } = await supabase.from('evaluation_progress').select('id').eq('item_no', item.no);
+    const progressIds = (progressRows || []).map(p => p.id);
+    if (progressIds.length > 0) {
+      await supabase.from('evaluation_evidences').delete().in('progress_id', progressIds);
+    }
+    await supabase.from('evaluation_progress').delete().eq('item_no', item.no);
+    await supabase.from('item_questions').delete().eq('item_id', item.id);
+    await supabase.from('item_comments').delete().eq('item_id', item.id);
+    await supabase.from('evaluation_plans').delete().eq('item_id', item.id);
+    const { error } = await supabase.from('evaluation_items').delete().eq('id', item.id);
+    if (error) { console.error('[deleteAdminItem] error:', error); return false; }
+    await loadAdminItems();
+    return true;
+  };
+
   const selectAdminItem = (item) => {
     setSelectedAdminItem(item);
     setAdminForm(item === 'new'
@@ -513,7 +530,7 @@ export default function EvaluationProgress() {
           onSelectAdminItem={selectAdminItem}
           adminForm={adminForm} setAdminForm={setAdminForm}
           savingAdminForm={savingAdminForm}
-          onSave={saveAdminForm} onArchive={archiveAdminItem}
+          onSave={saveAdminForm} onArchive={archiveAdminItem} onDelete={deleteAdminItem}
           mobileShowAdminEdit={mobileShowAdminEdit}
           setMobileShowAdminEdit={setMobileShowAdminEdit}
           proposals={proposals}

@@ -105,11 +105,13 @@ function ItemCommentsSection({ itemId, onCountChange }) {
 // ── AdminEditPane ────────────────────────────────────────────────
 function AdminEditPane({
   selectedAdminItem, adminForm, setAdminForm, savingAdminForm,
-  onSave, onArchive, onDeselect, onSelectNew, setItemCommentCounts, availableRanks, onBack,
+  onSave, onArchive, onDelete, onDeselect, onSelectNew, setItemCommentCounts, availableRanks, onBack,
 }) {
   const isNew = selectedAdminItem === 'new';
   const isArchived = !isNew && selectedAdminItem?.status === 'archived';
   const [toast, setToast] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = async () => {
     const ok = await onSave();
@@ -117,6 +119,13 @@ function AdminEditPane({
       setToast('保存しました✓');
       setTimeout(() => setToast(''), 2500);
     }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    const ok = await onDelete(selectedAdminItem);
+    setDeleting(false);
+    if (ok) { setShowDeleteConfirm(false); onDeselect(); }
   };
 
   if (!selectedAdminItem) {
@@ -185,6 +194,10 @@ function AdminEditPane({
         {!isNew && !isArchived && (
           <button onClick={onArchive} className="text-sm px-4 py-2.5 bg-white border border-red-200 text-red-500 rounded-xl hover:bg-red-50 transition-colors">Archive</button>
         )}
+        {!isNew && (
+          <button onClick={() => setShowDeleteConfirm(true)}
+            className="text-sm px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors">削除</button>
+        )}
         <button onClick={onDeselect}
           className="text-sm px-4 py-2.5 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">キャンセル</button>
       </div>
@@ -193,6 +206,27 @@ function AdminEditPane({
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg pointer-events-none">
           {toast}
+        </div>
+      )}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-sm font-bold text-slate-800">項目を削除しますか？</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              「{selectedAdminItem?.item_name}」を削除します。<br />
+              全メンバーのこの項目の進捗・エビデンス・質問も同時に削除されます。この操作は取り消せません。
+            </p>
+            <div className="flex gap-2">
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 text-sm py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 font-medium">
+                {deleting ? '削除中...' : '削除する'}
+              </button>
+              <button onClick={() => setShowDeleteConfirm(false)} disabled={deleting}
+                className="flex-1 text-sm py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+                キャンセル
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -262,8 +296,27 @@ function AdminLeftPane({
   const [savingOrder, setSavingOrder] = useState(false);
   // ドラッグ中のアイテムID
   const [activeDragId, setActiveDragId] = useState(null);
+  const [jumpRankIdx, setJumpRankIdx] = useState(0);
 
   const rankInputRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const rankGroupRefs = useRef({});
+
+  const jumpToRank = (rank) => {
+    const el = rankGroupRefs.current[rank];
+    const container = scrollContainerRef.current;
+    if (!el || !container) return;
+    const elTop = el.getBoundingClientRect().top;
+    const containerTop = container.getBoundingClientRect().top;
+    container.scrollBy({ top: elTop - containerTop - 8, behavior: 'smooth' });
+  };
+
+  const jumpToNextRank = () => {
+    if (rankGroups.length === 0) return;
+    const nextIdx = (jumpRankIdx + 1) % rankGroups.length;
+    setJumpRankIdx(nextIdx);
+    jumpToRank(rankGroups[nextIdx].rank);
+  };
 
   // availableRanks 変化時に rankOrder を同期
   useEffect(() => {
@@ -375,8 +428,24 @@ function AdminLeftPane({
           onClick={() => onSelectAdminItem('new')}
           className={`w-full text-sm py-2 rounded-xl font-medium transition-colors ${selectedAdminItem === 'new' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'}`}
         >＋ 新規項目を追加</button>
+        {rankGroups.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+            {rankGroups.map(({ rank }, idx) => (
+              <button key={rank} onClick={() => { setJumpRankIdx(idx); jumpToRank(rank); }}
+                className="text-xs whitespace-nowrap px-2 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors shrink-0 font-medium">
+                {rank}
+              </button>
+            ))}
+            {rankGroups.length > 1 && (
+              <button onClick={jumpToNextRank}
+                className="text-xs whitespace-nowrap px-2.5 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shrink-0 font-medium ml-1">
+                次→
+              </button>
+            )}
+          </div>
+        )}
         {rankCommentSummary.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap gap-1.5">
             {rankCommentSummary.map(r => (
               <span key={r.rank} className="text-xs bg-red-50 text-red-600 border border-red-100 px-2 py-0.5 rounded-full">
                 {r.rank} 💬 {r.count}件
@@ -386,7 +455,7 @@ function AdminLeftPane({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -395,7 +464,7 @@ function AdminLeftPane({
         >
           <div className="p-4 space-y-3">
             {rankGroups.map(({ rank, items: rankItems }, groupIdx) => (
-              <div key={rank} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+              <div key={rank} ref={el => { rankGroupRefs.current[rank] = el; }} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                 {/* ランクグループヘッダー */}
                 <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-600">{rank}</span>
@@ -553,7 +622,7 @@ function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalSt
 export default function AdminView({
   adminItems, selectedAdminItem, onSelectAdminItem,
   adminForm, setAdminForm, savingAdminForm,
-  onSave, onArchive, onDeselect, onSelectNew,
+  onSave, onArchive, onDelete, onDeselect, onSelectNew,
   mobileShowAdminEdit, setMobileShowAdminEdit,
   proposals, proposalContent, setProposalContent, savingProposal,
   onSaveProposal, onAdoptProposal, onUpdateProposalStatus,
@@ -572,7 +641,7 @@ export default function AdminView({
 
   const editPaneProps = {
     selectedAdminItem, adminForm, setAdminForm, savingAdminForm,
-    onSave, onArchive, onDeselect, onSelectNew, setItemCommentCounts, availableRanks,
+    onSave, onArchive, onDelete, onDeselect, onSelectNew, setItemCommentCounts, availableRanks,
   };
 
   return (

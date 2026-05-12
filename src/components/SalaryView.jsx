@@ -23,6 +23,19 @@ export default function SalaryView({ users }) {
   const [bulkSaving, setBulkSaving]         = useState(false);
   const [salaryView, setSalaryView]         = useState('personal');
 
+  // 加算機能
+  const [addUsers, setAddUsers]             = useState([]);
+  const [addAmount, setAddAmount]           = useState('');
+  const [addMonth, setAddMonth]             = useState(() => {
+    const [y, m] = CURRENT_MONTH.split('/').map(Number);
+    const nm = m + 1;
+    return `${nm > 12 ? y + 1 : y}/${String(nm > 12 ? nm - 12 : nm).padStart(2, '0')}`;
+  });
+  const [addNote, setAddNote]               = useState('');
+  const [addConfirm, setAddConfirm]         = useState(false);
+  const [addSaving, setAddSaving]           = useState(false);
+  const [addToast, setAddToast]             = useState('');
+
   useEffect(() => { if (users.length && !salaryUser) setSalaryUser(users[0]); }, [users]);
 
   useEffect(() => {
@@ -108,6 +121,38 @@ export default function SalaryView({ users }) {
     await loadAdminData();
     setBulkUsers([]); setBulkRate(''); setBulkNote('');
     setBulkSaving(false);
+  };
+
+  const handleAddAmount = async () => {
+    if (!addAmount || !addUsers.length) return;
+    setAddSaving(true);
+    const amount = parseInt(addAmount);
+    let successCount = 0;
+    for (const uid of addUsers) {
+      const user = users.find(u => u.id === uid);
+      const { data: existing } = await supabase.from('hourly_rate_history')
+        .select('id, base_rate').eq('user_id', uid).eq('month', addMonth).maybeSingle();
+      if (existing) {
+        const { error } = await supabase.from('hourly_rate_history')
+          .update({ base_rate: existing.base_rate + amount, note: addNote || existing.note })
+          .eq('id', existing.id);
+        if (!error) successCount++;
+      } else {
+        const { data: recent } = await supabase.from('hourly_rate_history')
+          .select('base_rate').eq('user_id', uid).order('month', { ascending: false }).limit(1).maybeSingle();
+        const baseRate = recent?.base_rate ?? getRankInfo(user?.rank ?? '').base;
+        const { error } = await supabase.from('hourly_rate_history').insert({
+          user_id: uid, month: addMonth, base_rate: baseRate + amount, item_bonus: 0,
+          confirmed: false, note: addNote || null,
+        });
+        if (!error) successCount++;
+      }
+    }
+    await loadAdminData();
+    setAddSaving(false);
+    setAddConfirm(false);
+    setAddToast(`${successCount}名に${amount}円加算しました`);
+    setTimeout(() => setAddToast(''), 3000);
   };
 
   const exportCsv = () => {
@@ -275,6 +320,7 @@ export default function SalaryView({ users }) {
       )}
 
       {salaryView === 'admin' && (
+        <>
         <div className="flex-1 overflow-y-auto p-5">
           {!adminUnlocked ? (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 max-w-sm mx-auto mt-8">
@@ -292,7 +338,7 @@ export default function SalaryView({ users }) {
             <div className="space-y-4 max-w-5xl mx-auto">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="flex items-center border-b border-slate-200 px-4">
-                  {[['list','一覧'],['bulk','一括更新']].map(([v,l]) => (
+                  {[['list','一覧'],['bulk','一括更新'],['add','加算']].map(([v,l]) => (
                     <button key={v} onClick={() => setAdminTab(v)}
                       className={`text-sm px-4 py-3 font-medium transition-colors border-b-2 ${adminTab === v ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                       {l}
@@ -385,10 +431,88 @@ export default function SalaryView({ users }) {
                     </button>
                   </div>
                 )}
+
+                {adminTab === 'add' && (
+                  <div className="p-5 space-y-4">
+                    <p className="text-sm text-slate-600">対象メンバーの基本時給に一定額を加算します（最低賃金改定など）</p>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-2">対象メンバーを選択</label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                        {users.map(u => (
+                          <label key={u.id} className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={addUsers.includes(u.id)}
+                              onChange={e => setAddUsers(prev => e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id))}
+                              className="w-3.5 h-3.5 accent-indigo-600" />
+                            <span className="text-xs text-slate-700 truncate">{u.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <button onClick={() => setAddUsers(addUsers.length === users.length ? [] : users.map(u => u.id))}
+                        className="text-xs text-indigo-600 hover:underline mt-1">
+                        {addUsers.length === users.length ? '全解除' : '全選択'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">加算額 (円) *</label>
+                        <input type="number" value={addAmount} onChange={e => setAddAmount(e.target.value)} placeholder="例: 62"
+                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">適用月</label>
+                        <input type="text" value={addMonth} onChange={e => setAddMonth(e.target.value)} placeholder="2026/06"
+                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">メモ（任意）</label>
+                      <input type="text" value={addNote} onChange={e => setAddNote(e.target.value)} placeholder="例: 最低賃金改定"
+                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    </div>
+                    <button onClick={() => setAddConfirm(true)} disabled={!addUsers.length || !addAmount || !addMonth}
+                      className="w-full text-sm py-2.5 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-40 font-medium">
+                      {addUsers.length}名に {addAmount ? `+${addAmount}円` : '加算額'} を適用
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
+
+        {/* 加算確認モーダル */}
+        {addConfirm && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+              <h3 className="text-sm font-bold text-slate-800">加算を実行しますか？</h3>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-slate-700 space-y-1">
+                <p>対象: <span className="font-semibold">{addUsers.length}名</span></p>
+                <p>加算額: <span className="font-semibold">+{addAmount}円</span></p>
+                <p>適用月: <span className="font-semibold">{addMonth}</span></p>
+                {addNote && <p>メモ: {addNote}</p>}
+                <p className="text-slate-500 pt-1">該当月のレコードがないメンバーは直近の時給に加算して新規作成します</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleAddAmount} disabled={addSaving}
+                  className="flex-1 text-sm py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-50 font-medium">
+                  {addSaving ? '処理中...' : '実行する'}
+                </button>
+                <button onClick={() => setAddConfirm(false)} disabled={addSaving}
+                  className="flex-1 text-sm py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+                  キャンセル
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 加算トースト */}
+        {addToast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-amber-500 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg pointer-events-none">
+            {addToast}
+          </div>
+        )}
+        </>
       )}
     </div>
   );
