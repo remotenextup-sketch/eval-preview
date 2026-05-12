@@ -187,7 +187,7 @@ function AdminEditPane({
         )}
       </div>
       <div className="px-5 py-4 bg-white border-t border-slate-200 shrink-0 flex flex-wrap gap-2">
-        <button onClick={handleSave} disabled={savingAdminForm || !adminForm.item_name.trim() || !adminForm.rank}
+        <button onClick={handleSave} disabled={savingAdminForm || !(adminForm.item_name ?? '').trim() || !adminForm.rank}
           className="flex-1 text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
           {savingAdminForm ? '保存中...' : isNew ? '保存して全員に追加' : '変更を保存'}
         </button>

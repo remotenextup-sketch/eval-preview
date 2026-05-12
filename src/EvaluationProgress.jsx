@@ -227,7 +227,7 @@ export default function EvaluationProgress() {
 
   // ── 管理タブ関数 ──
   const loadAdminItems = useCallback(async () => {
-    const { data, error } = await supabase.from('evaluation_items').select('*').order('sort_order', { nullsLast: true }).order('no');
+    const { data, error } = await supabase.from('evaluation_items').select('*').not('item_name', 'is', null).order('sort_order', { nullsLast: true }).order('no');
     if (error) { console.error('[loadAdminItems] error:', error); return false; }
     setAdminItems(data || []);
     return true;
@@ -254,7 +254,7 @@ export default function EvaluationProgress() {
     setSelectedAdminItem(item);
     setAdminForm(item === 'new'
       ? EMPTY_ITEM_FORM
-      : { item_name: item.item_name, rank: item.rank ?? '', description: item.description ?? '', is_salary_item: item.is_salary_item ?? false });
+      : { item_name: item.item_name ?? '', rank: item.rank ?? '', description: item.description ?? '', is_salary_item: item.is_salary_item ?? false });
     setMobileShowAdminEdit(true);
   };
 
@@ -263,10 +263,10 @@ export default function EvaluationProgress() {
     setSavingAdminForm(true);
     let success = false;
     if (selectedAdminItem === 'new') {
-      // no・sort_order を自動採番
-      const { data: maxRow } = await supabase.from('evaluation_items').select('no, sort_order').order('no', { descending: true }).limit(1);
+      // no・sort_order を自動採番（ascending: false で降順取得）
+      const { data: maxRow } = await supabase.from('evaluation_items').select('no').not('no', 'is', null).order('no', { ascending: false }).limit(1);
       const maxNo = (maxRow?.[0]?.no ?? 0) + 1;
-      const { data: maxSortRow } = await supabase.from('evaluation_items').select('sort_order').order('sort_order', { descending: true, nullsLast: true }).limit(1);
+      const { data: maxSortRow } = await supabase.from('evaluation_items').select('sort_order').not('sort_order', 'is', null).order('sort_order', { ascending: false }).limit(1);
       const maxSort = (maxSortRow?.[0]?.sort_order ?? 0) + 1;
 
       const { data, error } = await supabase.from('evaluation_items')
