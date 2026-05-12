@@ -280,7 +280,7 @@ function AdminLeftPane({
     availableRanks.forEach(rank => {
       grouped[rank] = (adminItems || [])
         .filter(i => i.rank === rank)
-        .sort((a, b) => (a.no ?? 9999) - (b.no ?? 9999));
+        .sort((a, b) => (a.sort_order ?? a.no ?? 9999) - (b.sort_order ?? b.no ?? 9999));
     });
     setLocalRankItems(grouped);
     setDirtyRanks(new Set());
@@ -331,33 +331,35 @@ function AdminLeftPane({
     setDirtyRanks(prev => new Set([...prev, targetRank]));
   };
 
-  // 順番を DB に保存（evaluation_items.no を更新）
+  // 順番を DB に保存（evaluation_items.sort_order を更新。no は変更しない）
   const saveOrder = async (rank) => {
     setSavingOrder(true);
     const items = localRankItems[rank] || [];
 
-    // 既存の no 値を昇順に取り出して再割り当て
-    const existingNos = (adminItems || [])
-      .filter(i => i.rank === rank && i.no != null)
-      .sort((a, b) => a.no - b.no)
-      .map(i => i.no);
+    // 既存の sort_order 値を昇順に並べて再割り当て（no は一切変更しない）
+    const existingSortOrders = (adminItems || [])
+      .filter(i => i.rank === rank)
+      .map(i => i.sort_order ?? i.no ?? 0)
+      .sort((a, b) => a - b);
 
     const updates = items.map((item, idx) => ({
       id: item.id,
-      no: existingNos[idx] ?? (idx + 1),
+      sort_order: existingSortOrders[idx] ?? (idx + 1),
     }));
 
     const results = await Promise.all(
-      updates.map(({ id, no }) => supabase.from('evaluation_items').update({ no }).eq('id', id))
+      updates.map(({ id, sort_order }) =>
+        supabase.from('evaluation_items').update({ sort_order }).eq('id', id)
+      )
     );
 
     if (results.some(r => r.error)) {
       console.error('[saveOrder] error:', results.find(r => r.error)?.error);
     } else {
-      const noMap = Object.fromEntries(updates.map(u => [u.id, u.no]));
+      const orderMap = Object.fromEntries(updates.map(u => [u.id, u.sort_order]));
       setLocalRankItems(prev => ({
         ...prev,
-        [rank]: (prev[rank] || []).map(item => ({ ...item, no: noMap[item.id] ?? item.no })),
+        [rank]: (prev[rank] || []).map(item => ({ ...item, sort_order: orderMap[item.id] ?? item.sort_order })),
       }));
       setDirtyRanks(prev => { const next = new Set(prev); next.delete(rank); return next; });
     }

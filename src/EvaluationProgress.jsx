@@ -131,7 +131,7 @@ export default function EvaluationProgress() {
   useEffect(() => {
     if (view !== 'admin' || adminLoaded) return;
     Promise.all([
-      supabase.from('evaluation_items').select('*').order('no'),
+      supabase.from('evaluation_items').select('*').order('sort_order', { nullsLast: true }).order('no'),
       supabase.from('improvement_proposals').select('*').order('created_at', { ascending: false }),
       supabase.from('item_comments').select('item_id').limit(5000),
     ]).then(([its, props, cmts]) => {
@@ -164,14 +164,22 @@ export default function EvaluationProgress() {
     setSelectedItem(null);
     setMobileShowDetail(false);
     const [{ data: progress }, { data: itemDefs }] = await Promise.all([
-      supabase.from('evaluation_progress').select('*, evaluation_evidences(*)').eq('user_name', selectedUser.progress_name ?? selectedUser.name).order('item_no', { ascending: true }),
-      supabase.from('evaluation_items').select('id, no, item_name, description, rank, is_salary_item').eq('rank', selectedUser.rank),
+      supabase.from('evaluation_progress').select('*, evaluation_evidences(*)').eq('user_name', selectedUser.progress_name ?? selectedUser.name),
+      supabase.from('evaluation_items').select('id, no, sort_order, item_name, description, rank, is_salary_item').eq('rank', selectedUser.rank),
     ]);
     const itemMap = {};
     (itemDefs || []).forEach(d => { if (d.no != null) itemMap[d.no] = d; });
     const merged = (progress || [])
       .filter(p => itemMap[p.item_no] != null)
-      .map(p => ({ ...p, item_name: itemMap[p.item_no].item_name, description: itemMap[p.item_no].description ?? '', item_def_id: itemMap[p.item_no].id, is_salary_item: itemMap[p.item_no].is_salary_item ?? false }));
+      .map(p => ({
+        ...p,
+        item_name: itemMap[p.item_no].item_name,
+        description: itemMap[p.item_no].description ?? '',
+        item_def_id: itemMap[p.item_no].id,
+        is_salary_item: itemMap[p.item_no].is_salary_item ?? false,
+        sort_order: itemMap[p.item_no].sort_order ?? itemMap[p.item_no].no ?? 9999,
+      }))
+      .sort((a, b) => a.sort_order - b.sort_order);
     setItems(merged);
     setLoading(false);
   }, [selectedUser]);
@@ -222,7 +230,7 @@ export default function EvaluationProgress() {
 
   // ── 管理タブ関数 ──
   const loadAdminItems = useCallback(async () => {
-    const { data, error } = await supabase.from('evaluation_items').select('*').order('no');
+    const { data, error } = await supabase.from('evaluation_items').select('*').order('sort_order', { nullsLast: true }).order('no');
     if (error) { console.error('[loadAdminItems] error:', error); return false; }
     setAdminItems(data || []);
     return true;
