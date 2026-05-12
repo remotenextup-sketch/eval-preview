@@ -118,6 +118,15 @@ function AdminEditPane({
 }) {
   const isNew = selectedAdminItem === 'new';
   const isArchived = !isNew && selectedAdminItem?.status === 'archived';
+  const [toast, setToast] = useState('');
+
+  const handleSave = async () => {
+    const ok = await onSave();
+    if (ok) {
+      setToast('保存しました✓');
+      setTimeout(() => setToast(''), 2500);
+    }
+  };
 
   if (!selectedAdminItem) {
     return (
@@ -178,7 +187,7 @@ function AdminEditPane({
         )}
       </div>
       <div className="px-5 py-4 bg-white border-t border-slate-200 shrink-0 flex flex-wrap gap-2">
-        <button onClick={onSave} disabled={savingAdminForm || !adminForm.item_name.trim() || !adminForm.rank}
+        <button onClick={handleSave} disabled={savingAdminForm || !adminForm.item_name.trim() || !adminForm.rank}
           className="flex-1 text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
           {savingAdminForm ? '保存中...' : isNew ? '保存して全員に追加' : '変更を保存'}
         </button>
@@ -190,6 +199,11 @@ function AdminEditPane({
       </div>
       {!isNew && <p className="text-xs text-slate-400 text-center pb-3">変更は即時反映されます</p>}
       {isNew && <p className="text-xs text-slate-400 text-center pb-3">保存後、全メンバーのevaluation_progressに自動追加されます</p>}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg pointer-events-none">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
@@ -200,9 +214,35 @@ function AdminLeftPane({
   savingProposal, proposalContent, setProposalContent, onSaveProposal,
   onAdoptProposal, onUpdateProposalStatus, selectedUser, addCustomRank,
 }) {
-  const rankGroups = availableRanks
+  const [rankOrder, setRankOrder] = useState([...availableRanks]);
+
+  useEffect(() => {
+    setRankOrder(prev => {
+      const next = prev.filter(r => availableRanks.includes(r));
+      availableRanks.forEach(r => { if (!next.includes(r)) next.push(r); });
+      return next;
+    });
+  }, [availableRanks]);
+
+  const rankGroups = rankOrder
     .map(rank => ({ rank, items: adminItems.filter(i => i.rank === rank).sort((a, b) => (a.no ?? 999) - (b.no ?? 999)) }))
     .filter(g => g.items.length > 0);
+
+  const moveRankGroup = (rank, direction) => {
+    const groupIdx = rankGroups.findIndex(g => g.rank === rank);
+    const targetIdx = groupIdx + direction;
+    if (targetIdx < 0 || targetIdx >= rankGroups.length) return;
+    const targetRank = rankGroups[targetIdx].rank;
+    setRankOrder(prev => {
+      const a = prev.indexOf(rank);
+      const b = prev.indexOf(targetRank);
+      if (a === -1 || b === -1) return prev;
+      const next = [...prev];
+      [next[a], next[b]] = [next[b], next[a]];
+      return next;
+    });
+  };
+
   const openProposals = proposals.filter(p => p.status === 'open');
   const rankInputRef = useRef(null);
 
@@ -226,11 +266,25 @@ function AdminLeftPane({
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-3">
-          {rankGroups.map(({ rank, items: rankItems }) => (
+          {rankGroups.map(({ rank, items: rankItems }, groupIdx) => (
             <div key={rank} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
               <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-600">{rank}</span>
-                <span className="text-xs text-slate-400">{rankItems.length}件</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-400">{rankItems.length}件</span>
+                  <button
+                    onClick={() => moveRankGroup(rank, -1)}
+                    disabled={groupIdx === 0}
+                    className="text-xs w-5 h-5 flex items-center justify-center rounded bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors"
+                    title="上に移動"
+                  >↑</button>
+                  <button
+                    onClick={() => moveRankGroup(rank, 1)}
+                    disabled={groupIdx === rankGroups.length - 1}
+                    className="text-xs w-5 h-5 flex items-center justify-center rounded bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors"
+                    title="下に移動"
+                  >↓</button>
+                </div>
               </div>
               <div className="divide-y divide-slate-100">
                 {rankItems.map(item => {

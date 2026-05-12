@@ -221,6 +221,13 @@ export default function EvaluationProgress() {
     .filter(r => r.count > 0);
 
   // ── 管理タブ関数 ──
+  const loadAdminItems = useCallback(async () => {
+    const { data, error } = await supabase.from('evaluation_items').select('*').order('no');
+    if (error) { console.error('[loadAdminItems] error:', error); return false; }
+    setAdminItems(data || []);
+    return true;
+  }, []);
+
   const selectAdminItem = (item) => {
     setSelectedAdminItem(item);
     setAdminForm(item === 'new'
@@ -230,23 +237,32 @@ export default function EvaluationProgress() {
   };
 
   const saveAdminForm = async () => {
-    if (!adminForm.item_name.trim() || !adminForm.rank) return;
+    if (!adminForm.item_name.trim() || !adminForm.rank) return false;
     setSavingAdminForm(true);
+    let success = false;
     if (selectedAdminItem === 'new') {
       const { data, error } = await supabase.from('evaluation_items').insert({ ...adminForm, status: 'active' }).select().single();
-      if (!error && data) {
-        setAdminItems(prev => prev.some(x => x.id === data.id) ? prev : [...prev, data]);
-        setSelectedAdminItem(data);
+      if (error) {
+        console.error('[saveAdminForm] INSERT error:', error);
+      } else {
+        console.log('[saveAdminForm] INSERT success');
+        if (data) setSelectedAdminItem(data);
+        await loadAdminItems();
+        success = true;
       }
     } else {
       const { error } = await supabase.from('evaluation_items').update(adminForm).eq('id', selectedAdminItem.id);
-      if (!error) {
-        const updated = { ...selectedAdminItem, ...adminForm };
-        setAdminItems(prev => prev.map(i => i.id === selectedAdminItem.id ? updated : i));
-        setSelectedAdminItem(updated);
+      if (error) {
+        console.error('[saveAdminForm] UPDATE error:', error);
+      } else {
+        console.log('[saveAdminForm] UPDATE success');
+        setSelectedAdminItem(prev => ({ ...prev, ...adminForm }));
+        await loadAdminItems();
+        success = true;
       }
     }
     setSavingAdminForm(false);
+    return success;
   };
 
   const archiveAdminItem = async () => {
