@@ -259,27 +259,34 @@ export default function EvaluationProgress() {
   };
 
   const saveAdminForm = async () => {
-    if (!adminForm.item_name.trim() || !adminForm.rank) return false;
+    console.log('[saveAdminForm] called, form:', adminForm, 'selectedAdminItem:', selectedAdminItem);
+    if (!(adminForm.item_name ?? '').trim() || !adminForm.rank) {
+      console.warn('[saveAdminForm] validation failed: item_name=', adminForm.item_name, 'rank=', adminForm.rank);
+      return false;
+    }
     setSavingAdminForm(true);
     let success = false;
     if (selectedAdminItem === 'new') {
       // no・sort_order を自動採番（ascending: false で降順取得）
-      const { data: maxRow } = await supabase.from('evaluation_items').select('no').not('no', 'is', null).order('no', { ascending: false }).limit(1);
+      const { data: maxRow, error: maxErr } = await supabase.from('evaluation_items').select('no').not('no', 'is', null).order('no', { ascending: false }).limit(1);
+      console.log('[saveAdminForm] maxRow:', maxRow, 'maxErr:', maxErr);
       const maxNo = (maxRow?.[0]?.no ?? 0) + 1;
       const { data: maxSortRow } = await supabase.from('evaluation_items').select('sort_order').not('sort_order', 'is', null).order('sort_order', { ascending: false }).limit(1);
       const maxSort = (maxSortRow?.[0]?.sort_order ?? 0) + 1;
+      console.log('[saveAdminForm] inserting with no:', maxNo, 'sort_order:', maxSort);
 
       const { data, error } = await supabase.from('evaluation_items')
         .insert({ ...adminForm, status: 'active', no: maxNo, sort_order: maxSort })
         .select().single();
+      console.log('[saveAdminForm] INSERT result data:', data, 'error:', error);
       if (error) {
         console.error('[saveAdminForm] INSERT error:', error);
       } else {
-        console.log('[saveAdminForm] INSERT success, no:', maxNo);
         if (data) setSelectedAdminItem(data);
 
         // 対象ランクの全ユーザーに evaluation_progress を追加
         const { data: targetUsers } = await supabase.from('users').select('id, name, progress_name, rank').eq('rank', adminForm.rank);
+        console.log('[saveAdminForm] targetUsers:', targetUsers?.length);
         if (targetUsers?.length) {
           const progressRows = targetUsers.map(u => ({
             user_name: u.progress_name ?? u.name,
@@ -288,8 +295,9 @@ export default function EvaluationProgress() {
             rank: adminForm.rank,
             status: 'pending',
           }));
-          const { error: progError } = await supabase.from('evaluation_progress').insert(progressRows);
-          if (progError) console.error('[saveAdminForm] evaluation_progress INSERT error:', progError);
+          const { error: progError } = await supabase.from('evaluation_progress')
+            .upsert(progressRows, { onConflict: 'user_name,item_no', ignoreDuplicates: true });
+          if (progError) console.error('[saveAdminForm] evaluation_progress upsert error:', progError);
           else console.log('[saveAdminForm] evaluation_progress added for', targetUsers.length, 'users');
         }
 
