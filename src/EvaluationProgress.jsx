@@ -308,16 +308,23 @@ export default function EvaluationProgress() {
     setSelectedItem(prev => prev?.id === id ? { ...prev, memo } : prev);
   };
 
+  const loadEvidences = useCallback(async (progressId) => {
+    const { data, error } = await supabase.from('evaluation_evidences').select('*').eq('progress_id', progressId).order('created_at', { ascending: true });
+    if (error) { console.error('[loadEvidences] error:', error); return; }
+    const evs = data ?? [];
+    const updateEv = item => ({ ...item, evaluation_evidences: evs });
+    setItems(prev => prev.map(i => i.id === progressId ? updateEv(i) : i));
+    setSelectedItem(prev => prev?.id === progressId ? updateEv(prev) : prev);
+  }, []);
+
   const addTextEvidence = async (progressId) => {
     const text = (evidenceText[progressId] ?? '').trim();
     if (!text) return;
-    const { data, error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'text', content: text }).select().single();
-    if (!error && data) {
-      const addEv = item => ({ ...item, evaluation_evidences: [...(item.evaluation_evidences ?? []), data] });
-      setItems(prev => prev.map(i => i.id === progressId ? addEv(i) : i));
-      setSelectedItem(prev => prev?.id === progressId ? addEv(prev) : prev);
-      setEvidenceText(prev => ({ ...prev, [progressId]: '' }));
-    }
+    const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'text', content: text });
+    if (error) { console.error('[addTextEvidence] INSERT error:', error); return; }
+    console.log('[addTextEvidence] INSERT success, progressId:', progressId);
+    setEvidenceText(prev => ({ ...prev, [progressId]: '' }));
+    await loadEvidences(progressId);
   };
 
   const uploadImage = async (progressId, file) => {
@@ -327,11 +334,11 @@ export default function EvaluationProgress() {
     const { error: upErr } = await supabase.storage.from('evidences').upload(filePath, file);
     if (!upErr) {
       const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
-      const { data, error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'image', content: publicUrl }).select().single();
-      if (!error && data) {
-        const addEv = item => ({ ...item, evaluation_evidences: [...(item.evaluation_evidences ?? []), data] });
-        setItems(prev => prev.map(i => i.id === progressId ? addEv(i) : i));
-        setSelectedItem(prev => prev?.id === progressId ? addEv(prev) : prev);
+      const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'image', content: publicUrl });
+      if (error) { console.error('[uploadImage] INSERT evidence error:', error); }
+      else {
+        console.log('[uploadImage] INSERT success, progressId:', progressId);
+        await loadEvidences(progressId);
       }
     }
     setUploading(prev => ({ ...prev, [progressId]: false }));
