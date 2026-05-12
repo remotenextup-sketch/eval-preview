@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
-function QuestionItem({ q, onAnswer, expanded, setExpanded }) {
+function QuestionItem({ q, onAnswer, onDelete, expanded, setExpanded }) {
   const [answerText, setAnswerText]   = useState('');
   const [answererName, setAnswererName] = useState('');
   const [showForm, setShowForm]       = useState(false);
@@ -16,9 +16,15 @@ function QuestionItem({ q, onAnswer, expanded, setExpanded }) {
           <span className="text-xs font-medium text-slate-700">{q.user_name}</span>
           <span className="text-xs text-slate-400">{new Date(q.created_at).toLocaleDateString('ja-JP')}</span>
         </div>
-        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isAnswered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-          {isAnswered ? '回答済' : '未回答'}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isAnswered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+            {isAnswered ? '回答済' : '未回答'}
+          </span>
+          <button onClick={() => onDelete(q.id)}
+            className="text-xs px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+            🗑
+          </button>
+        </div>
       </div>
       {isAnswered ? (
         <button onClick={() => setExpanded(p => ({ ...p, [q.id]: !p[q.id] }))} className="w-full text-left">
@@ -100,6 +106,11 @@ export default function ItemQuestionSection({ itemId, itemName }) {
     if (!error) setQuestions(prev => prev.map(q => q.id === qId ? { ...q, answer, answered_by: answeredBy, status: 'answered' } : q));
   };
 
+  const deleteQuestion = async (qId) => {
+    await supabase.from('item_questions').delete().eq('id', qId);
+    setQuestions(prev => prev.filter(q => q.id !== qId));
+  };
+
   if (!itemId) return null;
 
   return (
@@ -121,7 +132,7 @@ export default function ItemQuestionSection({ itemId, itemName }) {
       </div>
       {loading ? <p className="text-xs text-slate-400 text-center py-3">読み込み中...</p>
         : questions.length === 0 ? <p className="text-xs text-slate-400 text-center py-3">まだ質問がありません</p>
-        : <div className="space-y-2">{questions.map(q => <QuestionItem key={q.id} q={q} onAnswer={submitAnswer} expanded={expanded} setExpanded={setExpanded} />)}</div>}
+        : <div className="space-y-2">{questions.map(q => <QuestionItem key={q.id} q={q} onAnswer={submitAnswer} onDelete={deleteQuestion} expanded={expanded} setExpanded={setExpanded} />)}</div>}
     </section>
   );
 }
