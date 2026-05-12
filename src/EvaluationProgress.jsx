@@ -196,9 +196,19 @@ export default function EvaluationProgress() {
     supabase.from('evaluation_plans')
       .select('*, evaluation_items(item_name)')
       .eq('user_id', selectedUser.id)
-      .neq('status', 'achieved')
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .then(({ data }) => { setPlans(data || []); setPlansLoading(false); });
+      .order('planned_month', { ascending: true, nullsFirst: false })
+      .then(async ({ data }) => {
+        let loadedPlans = data || [];
+        const overdueIds = loadedPlans
+          .filter(p => p.status === 'planned' && p.planned_month && p.planned_month <= CURRENT_MONTH)
+          .map(p => p.id);
+        if (overdueIds.length > 0) {
+          await supabase.from('evaluation_plans').update({ status: 'overdue' }).in('id', overdueIds);
+          loadedPlans = loadedPlans.map(p => overdueIds.includes(p.id) ? { ...p, status: 'overdue' } : p);
+        }
+        setPlans(loadedPlans);
+        setPlansLoading(false);
+      });
   }, [selectedUser, view]);
 
   // ── 個人ビュー集計 ──
@@ -365,7 +375,8 @@ export default function EvaluationProgress() {
         const item = items.find(i => i.id === id);
         if (item?.item_def_id && selectedUser?.id) {
           supabase.from('evaluation_plans').update({ status: 'achieved' })
-            .eq('user_id', selectedUser.id).eq('item_id', item.item_def_id).eq('status', 'planned')
+            .eq('user_id', selectedUser.id).eq('item_id', item.item_def_id)
+            .in('status', ['planned', 'overdue'])
             .then(() => setPlans(prev => prev.filter(p => p.item_id !== item.item_def_id)));
         }
       }
@@ -481,6 +492,23 @@ export default function EvaluationProgress() {
     if (!error) setPlans(prev => prev.filter(p => p.id !== planId));
   };
 
+  const togglePlanCell = async (item, month, existingPlan) => {
+    if (!selectedUser) return;
+    if (existingPlan) {
+      const { error } = await supabase.from('evaluation_plans').delete().eq('id', existingPlan.id);
+      if (!error) setPlans(prev => prev.filter(p => p.id !== existingPlan.id));
+    } else {
+      const status = month <= CURRENT_MONTH ? 'overdue' : 'planned';
+      const { data, error } = await supabase.from('evaluation_plans').insert({
+        user_id: selectedUser.id,
+        item_id: item.item_def_id,
+        planned_month: month,
+        status,
+      }).select('*, evaluation_items(item_name)').single();
+      if (!error && data) setPlans(prev => [...prev, data]);
+    }
+  };
+
   const detailProps = selectedItem ? {
     item: selectedItem, onStatusChange: updateStatus, onMemoChange: updateMemo,
     evidenceText: evidenceText[selectedItem.id] ?? '',
@@ -502,7 +530,7 @@ export default function EvaluationProgress() {
         users={users} selectedUser={selectedUser} setSelectedUser={setSelectedUser}
         currentMonthCount={currentMonthCount}
         showPersonalChart={showPersonalChart} setShowPersonalChart={setShowPersonalChart}
-        plans={plans} showPlanView={showPlanView} setShowPlanView={setShowPlanView}
+        plans={plans.filter(p => p.status !== 'achieved')} showPlanView={showPlanView} setShowPlanView={setShowPlanView}
       />
 
       {view === 'personal' && (
@@ -519,9 +547,7 @@ export default function EvaluationProgress() {
           showPlanView={showPlanView} setShowPlanView={setShowPlanView}
           timelineData={timelineData} currentMonthCount={currentMonthCount}
           plans={plans} plansLoading={plansLoading}
-          planForm={planForm} setPlanForm={setPlanForm}
-          savingPlan={savingPlan}
-          onAddPlan={addPlan} onAchievePlan={achievePlan} onDeletePlan={deletePlan}
+          onCellClick={togglePlanCell}
           detailProps={detailProps}
           ngModal={ngModal} setNgModal={setNgModal}
           ngReasonText={ngReasonText} setNgReasonText={setNgReasonText}
