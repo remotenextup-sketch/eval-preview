@@ -294,15 +294,15 @@ function ListPane({
 }) {
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-white border-b border-slate-200 px-4 py-3 space-y-2 shrink-0">
+      <div className="bg-white border-b border-slate-200 px-3 py-1.5 space-y-1 shrink-0">
         {!loading && salarySummary.total > 0 && (
-          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-            <div className="flex items-center justify-between mb-1.5">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2">
+            <div className="flex items-center justify-between mb-1">
               <p className="text-xs font-semibold text-indigo-700">昇給項目の進捗</p>
               <p className="text-xs font-bold text-indigo-600">{salarySummary.done}/{salarySummary.total}件</p>
             </div>
-            <div className="w-full bg-indigo-100 rounded-full h-2 mb-1.5">
-              <div className="bg-indigo-500 h-2 rounded-full transition-all"
+            <div className="w-full bg-indigo-100 rounded-full h-1.5 mb-1">
+              <div className="bg-indigo-500 h-1.5 rounded-full transition-all"
                 style={{ width: `${salarySummary.total > 0 ? Math.round((salarySummary.done / salarySummary.total) * 100) : 0}%` }} />
             </div>
             <p className="text-xs text-indigo-400 text-right">
@@ -310,19 +310,19 @@ function ListPane({
             </p>
           </div>
         )}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1">
           {FILTER_TABS.map(tab => (
             <button key={tab.value} onClick={() => setStatusFilter(tab.value)}
-              className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${statusFilter === tab.value ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+              className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${statusFilter === tab.value ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
               {tab.label}{tab.value !== 'all' && <span className="ml-1 opacity-70">({statusCounts[tab.value] ?? 0})</span>}
             </button>
           ))}
         </div>
         {availableMonths.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-slate-100">
-            <button onClick={() => setMonthFilter('all')} className={`text-xs px-2.5 py-1 rounded-full transition-colors ${monthFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>全月</button>
+          <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100">
+            <button onClick={() => setMonthFilter('all')} className={`text-xs px-2 py-0.5 rounded-full transition-colors ${monthFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>全月</button>
             {availableMonths.map(m => (
-              <button key={m} onClick={() => setMonthFilter(m)} className={`text-xs px-2.5 py-1 rounded-full transition-colors ${monthFilter === m ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{m}</button>
+              <button key={m} onClick={() => setMonthFilter(m)} className={`text-xs px-2 py-0.5 rounded-full transition-colors ${monthFilter === m ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{m}</button>
             ))}
           </div>
         )}
