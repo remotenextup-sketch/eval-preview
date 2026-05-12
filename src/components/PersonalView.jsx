@@ -207,32 +207,51 @@ function PlanPanel({ plans, plansLoading, planForm, setPlanForm, savingPlan, onA
   const daysStyle = (d) => d === null ? '' : d < 0 ? 'text-red-500 font-semibold' : d <= 7 ? 'text-orange-500 font-semibold' : 'text-green-600';
   const daysLabel = (d) => d === null ? '' : d < 0 ? `${Math.abs(d)}日超過` : d === 0 ? '今日が期限' : `あと${d}日`;
 
+  const cardBg = (d) => {
+    if (d === null) return 'border-slate-200 bg-white';
+    if (d < 0) return 'border-red-200 bg-red-50';
+    if (d <= 7) return 'border-orange-200 bg-orange-50';
+    return 'border-slate-200 bg-white';
+  };
+
   return (
     <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
-      <div>
-        <h2 className="text-base font-semibold text-slate-700">{selectedUser?.name} のクリア計画</h2>
-        <p className="text-xs text-slate-400 mb-4">期限を設定して項目クリアを管理します</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-700">{selectedUser?.name} のクリア計画</h2>
+          <p className="text-xs text-slate-400">期限を設定して項目クリアを管理します</p>
+        </div>
+        <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">{plans.length}件</span>
       </div>
       <div className="space-y-2">
         {plansLoading ? <p className="text-sm text-slate-400 text-center py-6">読み込み中...</p>
-          : plans.length === 0 ? <p className="text-sm text-slate-400 text-center py-6">計画がありません</p>
-          : plans.map(plan => {
+          : plans.length === 0 ? (
+            <div className="text-center py-10">
+              <p className="text-sm text-slate-400">計画がありません</p>
+              <p className="text-xs text-slate-300 mt-1">下のフォームから追加できます</p>
+            </div>
+          ) : plans.map(plan => {
             const days = getDaysLeft(plan.due_date);
             return (
-              <div key={plan.id} className={`bg-white rounded-xl border p-3 shadow-sm ${days !== null && days < 0 ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
+              <div key={plan.id} className={`rounded-xl border p-3 shadow-sm ${cardBg(days)}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-800 leading-snug">{plan.evaluation_items?.item_name ?? '(不明)'}</p>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <p className="text-sm font-medium text-slate-800 leading-snug">{plan.evaluation_items?.item_name ?? '(不明)'}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      {plan.start_date && <span className="text-xs text-slate-400">開始: {plan.start_date}</span>}
                       {plan.due_date && <span className="text-xs text-slate-500">期限: {plan.due_date}</span>}
-                      {days !== null && <span className={`text-xs ${daysStyle(days)}`}>{daysLabel(days)}</span>}
+                      {days !== null && (
+                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+                          days < 0 ? 'bg-red-100 text-red-600' : days <= 7 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-700'
+                        }`}>{daysLabel(days)}</span>
+                      )}
                       {plan.planned_month && <span className="text-xs text-indigo-500">予定月: {plan.planned_month}</span>}
-                      {plan.created_by && plan.created_by !== 'self' && <span className="text-xs text-slate-400">担当: {plan.created_by}</span>}
+                      {plan.created_by && <span className="text-xs text-slate-400">担当: {plan.created_by}</span>}
                     </div>
                   </div>
                   <div className="flex gap-1.5 shrink-0">
-                    <button onClick={() => onAchievePlan(plan.id)} className="text-xs px-2 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">達成</button>
-                    <button onClick={() => onDeletePlan(plan.id)} className="text-xs px-2 py-1 bg-white border border-slate-300 text-slate-500 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors">削除</button>
+                    <button onClick={() => onAchievePlan(plan.id)} className="text-xs px-2 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">✓ 達成</button>
+                    <button onClick={() => onDeletePlan(plan.id)} className="text-xs px-1.5 py-1 bg-white border border-slate-200 text-slate-400 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors">🗑</button>
                   </div>
                 </div>
               </div>
