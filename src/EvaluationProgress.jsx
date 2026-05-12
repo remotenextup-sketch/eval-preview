@@ -63,6 +63,9 @@ export default function EvaluationProgress() {
   const [planForm, setPlanForm]         = useState({ item_id: '', planned_month: '', start_date: '', due_date: '', created_by: '' });
   const [savingPlan, setSavingPlan]     = useState(false);
 
+  // ── 管理者認証 ──
+  const [adminAuthed, setAdminAuthed]   = useState(false);
+
   // ── メンバー管理タブ ──
   const [membersKey, setMembersKey]     = useState(0);
   const [availableRanks, setAvailableRanks] = useState([...RANK_OPTIONS]);
@@ -423,6 +426,7 @@ export default function EvaluationProgress() {
         currentMonthCount={currentMonthCount}
         showPersonalChart={showPersonalChart} setShowPersonalChart={setShowPersonalChart}
         plans={plans} showPlanView={showPlanView} setShowPlanView={setShowPlanView}
+        adminAuthed={adminAuthed} setAdminAuthed={setAdminAuthed}
       />
 
       {view === 'personal' && (
