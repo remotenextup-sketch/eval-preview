@@ -105,7 +105,7 @@ export default function ItemQuestionSection({ itemId, itemName }) {
   return (
     <section>
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-        みんなへの質問{questions.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({questions.length}件)</span>}
+        項目に関する質問{questions.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({questions.length}件)</span>}
       </p>
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-3 space-y-2">
         <input type="text" value={userName} onChange={e => setUserName(e.target.value)} placeholder="投稿者名..."
