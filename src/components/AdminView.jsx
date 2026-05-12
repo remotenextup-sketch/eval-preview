@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { supabase } from './supabaseClient';
 import { RANK_OPTIONS } from '../constants';
 
+// ── ItemCommentsSection ──────────────────────────────────────────
 function ItemCommentsSection({ itemId, onCountChange }) {
   const [comments, setComments]     = useState([]);
   const [loading, setLoading]       = useState(false);
@@ -12,10 +20,7 @@ function ItemCommentsSection({ itemId, onCountChange }) {
   useEffect(() => {
     if (!itemId) return;
     setLoading(true);
-    supabase
-      .from('item_comments')
-      .select('*')
-      .eq('item_id', itemId)
+    supabase.from('item_comments').select('*').eq('item_id', itemId)
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error('コメント取得エラー:', error);
@@ -27,11 +32,9 @@ function ItemCommentsSection({ itemId, onCountChange }) {
   const submit = async () => {
     if (!content.trim() || !authorName.trim()) return;
     setSaving(true);
-    const { data, error } = await supabase
-      .from('item_comments')
+    const { data, error } = await supabase.from('item_comments')
       .insert({ item_id: itemId, user_name: authorName.trim(), content: content.trim() })
-      .select()
-      .single();
+      .select().single();
     if (error) {
       console.error('コメント投稿エラー:', error);
     } else if (data) {
@@ -59,26 +62,16 @@ function ItemCommentsSection({ itemId, onCountChange }) {
         {comments.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">({comments.length}件)</span>}
       </h4>
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-3 space-y-2">
-        <input
-          type="text"
-          value={authorName}
-          onChange={e => setAuthorName(e.target.value)}
+        <input type="text" value={authorName} onChange={e => setAuthorName(e.target.value)}
           placeholder="名前を入力"
-          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
-        />
-        <textarea
-          value={content}
-          onChange={e => setContent(e.target.value)}
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        <textarea value={content} onChange={e => setContent(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submit(); }}
           placeholder="この項目についてコメントや意見を書いてください..."
           rows={3}
-          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white resize-y focus:outline-none focus:ring-2 focus:ring-indigo-300"
-        />
-        <button
-          onClick={submit}
-          disabled={saving || !content.trim() || !authorName.trim()}
-          className="w-full text-sm py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40"
-        >
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white resize-y focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        <button onClick={submit} disabled={saving || !content.trim() || !authorName.trim()}
+          className="w-full text-sm py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40">
           {saving ? '投稿中...' : '投稿する'}
         </button>
       </div>
@@ -97,11 +90,8 @@ function ItemCommentsSection({ itemId, onCountChange }) {
                     {new Date(c.created_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <button
-                  onClick={() => remove(c.id)}
-                  className="text-slate-300 hover:text-red-500 transition-colors leading-none text-base"
-                  title="削除"
-                >🗑️</button>
+                <button onClick={() => remove(c.id)}
+                  className="text-slate-300 hover:text-red-500 transition-colors leading-none text-base" title="削除">🗑️</button>
               </div>
               <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{c.content}</p>
             </div>
@@ -112,6 +102,7 @@ function ItemCommentsSection({ itemId, onCountChange }) {
   );
 }
 
+// ── AdminEditPane ────────────────────────────────────────────────
 function AdminEditPane({
   selectedAdminItem, adminForm, setAdminForm, savingAdminForm,
   onSave, onArchive, onDeselect, onSelectNew, setItemCommentCounts, availableRanks, onBack,
@@ -208,14 +199,73 @@ function AdminEditPane({
   );
 }
 
+// ── SortableItemRow ──────────────────────────────────────────────
+function SortableItemRow({ item, isSelected, onSelect, commentCount, isDragActive }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const hasComments = commentCount > 0;
+
+  const bgClass = isDragging
+    ? 'bg-indigo-50/80'
+    : isSelected
+    ? 'bg-indigo-50'
+    : '';
+
+  const inlineBg = !isDragging && !isSelected && hasComments ? { backgroundColor: '#FFF0F0' } : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, ...inlineBg }}
+      className={`flex items-center border-b border-slate-100 last:border-b-0 ${bgClass} ${isDragging ? 'shadow-md z-10 rounded-lg' : ''}`}
+    >
+      {/* ドラッグハンドル */}
+      <span
+        {...attributes}
+        {...listeners}
+        className="px-2 py-3 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing select-none shrink-0 touch-none text-base leading-none"
+        title="ドラッグして並び替え"
+      >⠿</span>
+      {/* 項目ボタン */}
+      <button
+        onClick={() => !isDragActive && onSelect(item)}
+        disabled={isDragActive}
+        className="flex-1 min-w-0 text-left px-2 py-2.5 flex items-start gap-2 disabled:pointer-events-none"
+      >
+        <span className="text-xs text-slate-400 w-6 shrink-0 mt-0.5">#{item.no}</span>
+        <p className="flex-1 text-sm text-slate-800 leading-snug">{item.item_name}</p>
+        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+          {hasComments && (
+            <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">💬 {commentCount}</span>
+          )}
+          {item.is_salary_item && <span className="text-xs bg-amber-100 text-amber-700 px-1 py-0.5 rounded">昇給</span>}
+          {item.status !== 'active' && <span className="text-xs bg-slate-100 text-slate-400 px-1 py-0.5 rounded">{item.status}</span>}
+        </div>
+        <span className="text-slate-300 text-xs mt-0.5 shrink-0">›</span>
+      </button>
+    </div>
+  );
+}
+
+// ── AdminLeftPane ────────────────────────────────────────────────
 function AdminLeftPane({
   availableRanks, adminItems, selectedAdminItem, onSelectAdminItem,
   rankCommentSummary, itemCommentCounts, proposals, setMtgMode,
   savingProposal, proposalContent, setProposalContent, onSaveProposal,
   onAdoptProposal, onUpdateProposalStatus, selectedUser, addCustomRank,
 }) {
+  // ランク表示順（↑↓ボタンで変更）
   const [rankOrder, setRankOrder] = useState([...availableRanks]);
+  // 各ランク内の項目ローカル順序
+  const [localRankItems, setLocalRankItems] = useState({});
+  // 順序変更済みで未保存のランク
+  const [dirtyRanks, setDirtyRanks] = useState(new Set());
+  const [savingOrder, setSavingOrder] = useState(false);
+  // ドラッグ中のアイテムID
+  const [activeDragId, setActiveDragId] = useState(null);
 
+  const rankInputRef = useRef(null);
+
+  // availableRanks 変化時に rankOrder を同期
   useEffect(() => {
     setRankOrder(prev => {
       const next = prev.filter(r => availableRanks.includes(r));
@@ -224,10 +274,24 @@ function AdminLeftPane({
     });
   }, [availableRanks]);
 
+  // adminItems 変化時に localRankItems を再初期化
+  useEffect(() => {
+    const grouped = {};
+    availableRanks.forEach(rank => {
+      grouped[rank] = (adminItems || [])
+        .filter(i => i.rank === rank)
+        .sort((a, b) => (a.no ?? 9999) - (b.no ?? 9999));
+    });
+    setLocalRankItems(grouped);
+    setDirtyRanks(new Set());
+  }, [adminItems, availableRanks]);
+
+  // 表示するランクグループ（アイテムがあるランクのみ）
   const rankGroups = rankOrder
-    .map(rank => ({ rank, items: adminItems.filter(i => i.rank === rank).sort((a, b) => (a.no ?? 999) - (b.no ?? 999)) }))
+    .map(rank => ({ rank, items: localRankItems[rank] || [] }))
     .filter(g => g.items.length > 0);
 
+  // ランクグループの ↑/↓ 移動
   const moveRankGroup = (rank, direction) => {
     const groupIdx = rankGroups.findIndex(g => g.rank === rank);
     const targetIdx = groupIdx + direction;
@@ -243,8 +307,64 @@ function AdminLeftPane({
     });
   };
 
+  // DnD センサー（5px 移動で開始）
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleDragStart = ({ active }) => setActiveDragId(active.id);
+
+  const handleDragEnd = ({ active, over }) => {
+    setActiveDragId(null);
+    if (!over || active.id === over.id) return;
+
+    let targetRank = null;
+    for (const { rank, items } of rankGroups) {
+      if (items.some(i => i.id === active.id)) { targetRank = rank; break; }
+    }
+    if (!targetRank) return;
+
+    const items = localRankItems[targetRank] || [];
+    const oldIdx = items.findIndex(i => i.id === active.id);
+    const newIdx = items.findIndex(i => i.id === over.id);
+    if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return;
+
+    setLocalRankItems(prev => ({ ...prev, [targetRank]: arrayMove(items, oldIdx, newIdx) }));
+    setDirtyRanks(prev => new Set([...prev, targetRank]));
+  };
+
+  // 順番を DB に保存（evaluation_items.no を更新）
+  const saveOrder = async (rank) => {
+    setSavingOrder(true);
+    const items = localRankItems[rank] || [];
+
+    // 既存の no 値を昇順に取り出して再割り当て
+    const existingNos = (adminItems || [])
+      .filter(i => i.rank === rank && i.no != null)
+      .sort((a, b) => a.no - b.no)
+      .map(i => i.no);
+
+    const updates = items.map((item, idx) => ({
+      id: item.id,
+      no: existingNos[idx] ?? (idx + 1),
+    }));
+
+    const results = await Promise.all(
+      updates.map(({ id, no }) => supabase.from('evaluation_items').update({ no }).eq('id', id))
+    );
+
+    if (results.some(r => r.error)) {
+      console.error('[saveOrder] error:', results.find(r => r.error)?.error);
+    } else {
+      const noMap = Object.fromEntries(updates.map(u => [u.id, u.no]));
+      setLocalRankItems(prev => ({
+        ...prev,
+        [rank]: (prev[rank] || []).map(item => ({ ...item, no: noMap[item.id] ?? item.no })),
+      }));
+      setDirtyRanks(prev => { const next = new Set(prev); next.delete(rank); return next; });
+    }
+    setSavingOrder(false);
+  };
+
   const openProposals = proposals.filter(p => p.status === 'open');
-  const rankInputRef = useRef(null);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -265,59 +385,64 @@ function AdminLeftPane({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-3">
-          {rankGroups.map(({ rank, items: rankItems }, groupIdx) => (
-            <div key={rank} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-              <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">{rank}</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-400">{rankItems.length}件</span>
-                  <button
-                    onClick={() => moveRankGroup(rank, -1)}
-                    disabled={groupIdx === 0}
-                    className="text-xs w-5 h-5 flex items-center justify-center rounded bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors"
-                    title="上に移動"
-                  >↑</button>
-                  <button
-                    onClick={() => moveRankGroup(rank, 1)}
-                    disabled={groupIdx === rankGroups.length - 1}
-                    className="text-xs w-5 h-5 flex items-center justify-center rounded bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors"
-                    title="下に移動"
-                  >↓</button>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="p-4 space-y-3">
+            {rankGroups.map(({ rank, items: rankItems }, groupIdx) => (
+              <div key={rank} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                {/* ランクグループヘッダー */}
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">{rank}</span>
+                  <div className="flex items-center gap-1.5">
+                    {dirtyRanks.has(rank) && (
+                      <button
+                        onClick={() => saveOrder(rank)}
+                        disabled={savingOrder}
+                        className="text-xs px-2 py-0.5 bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors disabled:opacity-50 font-medium"
+                      >
+                        {savingOrder ? '...' : '順番を保存'}
+                      </button>
+                    )}
+                    <span className="text-xs text-slate-400">{rankItems.length}件</span>
+                    <button
+                      onClick={() => moveRankGroup(rank, -1)}
+                      disabled={groupIdx === 0 || !!activeDragId}
+                      className="text-xs w-6 h-6 flex items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors font-bold"
+                      title="上に移動"
+                    >↑</button>
+                    <button
+                      onClick={() => moveRankGroup(rank, 1)}
+                      disabled={groupIdx === rankGroups.length - 1 || !!activeDragId}
+                      className="text-xs w-6 h-6 flex items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors font-bold"
+                      title="下に移動"
+                    >↓</button>
+                  </div>
                 </div>
+                {/* ソータブルアイテムリスト */}
+                <SortableContext items={rankItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                  <div>
+                    {rankItems.map(item => (
+                      <SortableItemRow
+                        key={item.id}
+                        item={item}
+                        isSelected={selectedAdminItem !== 'new' && selectedAdminItem?.id === item.id}
+                        onSelect={onSelectAdminItem}
+                        commentCount={itemCommentCounts[item.id] || 0}
+                        isDragActive={!!activeDragId}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
               </div>
-              <div className="divide-y divide-slate-100">
-                {rankItems.map(item => {
-                  const commentCount = itemCommentCounts[item.id] || 0;
-                  const hasComments = commentCount > 0;
-                  const isSelected = selectedAdminItem !== 'new' && selectedAdminItem?.id === item.id;
-                  return (
-                    <button key={item.id} onClick={() => onSelectAdminItem(item)}
-                      className={`w-full text-left px-3 py-2.5 flex items-start gap-2 transition-colors ${
-                        isSelected ? 'bg-indigo-50' : hasComments ? 'hover:bg-red-50' : 'hover:bg-slate-50'
-                      }`}
-                      style={!isSelected && hasComments ? { backgroundColor: '#FFF0F0' } : undefined}
-                    >
-                      <span className="text-xs text-slate-400 w-6 shrink-0 mt-0.5">#{item.no}</span>
-                      <p className="flex-1 text-sm text-slate-800 leading-snug">{item.item_name}</p>
-                      <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                        {hasComments && (
-                          <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">
-                            💬 {commentCount}
-                          </span>
-                        )}
-                        {item.is_salary_item && <span className="text-xs bg-amber-100 text-amber-700 px-1 py-0.5 rounded">昇給</span>}
-                        {item.status !== 'active' && <span className="text-xs bg-slate-100 text-slate-400 px-1 py-0.5 rounded">{item.status}</span>}
-                      </div>
-                      <span className="text-slate-300 text-xs mt-0.5">›</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </DndContext>
 
+        {/* 改善提案ボード */}
         <div className="px-4 pb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-slate-700">
@@ -330,7 +455,8 @@ function AdminLeftPane({
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3 space-y-2 shadow-sm">
             <p className="text-xs text-slate-400">投稿者: <span className="font-medium text-slate-600">{selectedUser?.name ?? '（未選択）'}</span></p>
-            <textarea value={proposalContent} onChange={e => setProposalContent(e.target.value)} placeholder="改善提案・アイデアを書いてください" rows={3}
+            <textarea value={proposalContent} onChange={e => setProposalContent(e.target.value)}
+              placeholder="改善提案・アイデアを書いてください" rows={3}
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             <button onClick={onSaveProposal} disabled={savingProposal || !proposalContent.trim() || !selectedUser}
               className="w-full text-sm py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40">
@@ -362,6 +488,7 @@ function AdminLeftPane({
           </div>
         </div>
 
+        {/* ランク管理 */}
         <div className="px-4 pb-6 mt-2">
           <div className="border-t border-slate-200 pt-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">ランク管理</h3>
@@ -385,6 +512,7 @@ function AdminLeftPane({
   );
 }
 
+// ── MtgOverlay ───────────────────────────────────────────────────
 function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalStatus }) {
   const openProposals = proposals.filter(p => p.status === 'open');
   return (
@@ -419,6 +547,7 @@ function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalSt
   );
 }
 
+// ── AdminView (exported) ─────────────────────────────────────────
 export default function AdminView({
   adminItems, selectedAdminItem, onSelectAdminItem,
   adminForm, setAdminForm, savingAdminForm,
