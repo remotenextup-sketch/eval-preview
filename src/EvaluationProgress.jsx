@@ -263,12 +263,36 @@ export default function EvaluationProgress() {
     setSavingAdminForm(true);
     let success = false;
     if (selectedAdminItem === 'new') {
-      const { data, error } = await supabase.from('evaluation_items').insert({ ...adminForm, status: 'active' }).select().single();
+      // no・sort_order を自動採番
+      const { data: maxRow } = await supabase.from('evaluation_items').select('no, sort_order').order('no', { descending: true }).limit(1);
+      const maxNo = (maxRow?.[0]?.no ?? 0) + 1;
+      const { data: maxSortRow } = await supabase.from('evaluation_items').select('sort_order').order('sort_order', { descending: true, nullsLast: true }).limit(1);
+      const maxSort = (maxSortRow?.[0]?.sort_order ?? 0) + 1;
+
+      const { data, error } = await supabase.from('evaluation_items')
+        .insert({ ...adminForm, status: 'active', no: maxNo, sort_order: maxSort })
+        .select().single();
       if (error) {
         console.error('[saveAdminForm] INSERT error:', error);
       } else {
-        console.log('[saveAdminForm] INSERT success');
+        console.log('[saveAdminForm] INSERT success, no:', maxNo);
         if (data) setSelectedAdminItem(data);
+
+        // 対象ランクの全ユーザーに evaluation_progress を追加
+        const { data: targetUsers } = await supabase.from('users').select('id, name, progress_name, rank').eq('rank', adminForm.rank);
+        if (targetUsers?.length) {
+          const progressRows = targetUsers.map(u => ({
+            user_name: u.progress_name ?? u.name,
+            user_id: u.id,
+            item_no: maxNo,
+            rank: adminForm.rank,
+            status: 'pending',
+          }));
+          const { error: progError } = await supabase.from('evaluation_progress').insert(progressRows);
+          if (progError) console.error('[saveAdminForm] evaluation_progress INSERT error:', progError);
+          else console.log('[saveAdminForm] evaluation_progress added for', targetUsers.length, 'users');
+        }
+
         await loadAdminItems();
         success = true;
       }
