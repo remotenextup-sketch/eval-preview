@@ -31,7 +31,6 @@ export const RANK_SALARY = {
   'ブランドマネージャー': { base: 1600, bonus: 5 },
   'ゼネラルマネージャー': { base: 1800, bonus: 5 },
 };
-export const ADMIN_PASSWORD = 'nextup2024';
 export const RANK_CHART_COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#64748b'];
 export const EMPTY_ITEM_FORM   = { item_name: '', rank: '', description: '', is_salary_item: false };
 export const EMPTY_MEMBER_FORM = { name: '', email: '', rank: '', department: [], mall: '', onboarding_at: '' };

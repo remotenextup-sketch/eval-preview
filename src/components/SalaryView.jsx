@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabaseClient';
-import { CURRENT_MONTH, ADMIN_PASSWORD, RANK_SALARY } from '../constants';
+import { CURRENT_MONTH, RANK_SALARY } from '../constants';
 
 export default function SalaryView({ users }) {
   const [salaryUser, setSalaryUser]         = useState(null);
@@ -10,9 +10,6 @@ export default function SalaryView({ users }) {
   const [salaryLoading, setSalaryLoading]   = useState(false);
   const [toggling, setToggling]             = useState(null);
 
-  const [adminUnlocked, setAdminUnlocked]   = useState(false);
-  const [adminInput, setAdminInput]         = useState('');
-  const [adminPwError, setAdminPwError]     = useState(false);
   const [adminTab, setAdminTab]             = useState('list');
   const [allSalaryData, setAllSalaryData]   = useState([]);
   const [adminLoading, setAdminLoading]     = useState(false);
@@ -54,7 +51,7 @@ export default function SalaryView({ users }) {
     });
   }, [salaryUser]);
 
-  useEffect(() => { if (salaryView === 'admin' && adminUnlocked) loadAdminData(); }, [salaryView, adminUnlocked]);
+  useEffect(() => { if (salaryView === 'admin') loadAdminData(); }, [salaryView]);
 
   const loadAdminData = async () => {
     setAdminLoading(true);
@@ -102,11 +99,6 @@ export default function SalaryView({ users }) {
     const { data } = await supabase.from('hourly_rate_history').select('*').eq('user_id', salaryUser.id).order('month');
     setSalaryHistory(data || []);
     setToggling(null);
-  };
-
-  const unlockAdmin = () => {
-    if (adminInput === ADMIN_PASSWORD) { setAdminUnlocked(true); setAdminInput(''); setAdminPwError(false); }
-    else setAdminPwError(true);
   };
 
   const handleBulkUpdate = async () => {
@@ -322,20 +314,7 @@ export default function SalaryView({ users }) {
       {salaryView === 'admin' && (
         <>
         <div className="flex-1 overflow-y-auto p-5">
-          {!adminUnlocked ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 max-w-sm mx-auto mt-8">
-              <h3 className="text-sm font-semibold text-slate-700 mb-1">管理者認証</h3>
-              <p className="text-xs text-slate-400 mb-4">パスワードを入力してください</p>
-              <div className="flex gap-2">
-                <input type="password" value={adminInput} onChange={e => setAdminInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && unlockAdmin()} placeholder="パスワード"
-                  className={`flex-1 text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 ${adminPwError ? 'border-red-400' : 'border-slate-300'}`} />
-                <button onClick={unlockAdmin} className="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">確認</button>
-              </div>
-              {adminPwError && <p className="text-xs text-red-500 mt-2">パスワードが違います</p>}
-            </div>
-          ) : (
-            <div className="space-y-4 max-w-5xl mx-auto">
+          <div className="space-y-4 max-w-5xl mx-auto">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="flex items-center border-b border-slate-200 px-4">
                   {[['list','一覧'],['bulk','一括更新'],['add','加算']].map(([v,l]) => (
@@ -477,7 +456,6 @@ export default function SalaryView({ users }) {
                 )}
               </div>
             </div>
-          )}
         </div>
 
         {/* 加算確認モーダル */}

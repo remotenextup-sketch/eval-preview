@@ -1,38 +1,10 @@
-import React, { useState } from 'react';
-import { ADMIN_PASSWORD } from '../constants';
+import React from 'react';
 
 export default function Header({
   view, setView, users, selectedUser, setSelectedUser,
   currentMonthCount, showPersonalChart, setShowPersonalChart,
   plans, showPlanView, setShowPlanView,
-  adminAuthed, setAdminAuthed,
 }) {
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminInput, setAdminInput] = useState('');
-  const [adminError, setAdminError] = useState(false);
-
-  const handleTabClick = (v) => {
-    if (v === 'admin' && !adminAuthed) {
-      setShowAdminModal(true);
-      setAdminInput('');
-      setAdminError(false);
-    } else {
-      setView(v);
-    }
-  };
-
-  const confirmAdmin = () => {
-    if (adminInput === ADMIN_PASSWORD) {
-      setAdminAuthed(true);
-      setView('admin');
-      setShowAdminModal(false);
-      setAdminInput('');
-      setAdminError(false);
-    } else {
-      setAdminError(true);
-    }
-  };
-
   return (
     <>
       <header className="bg-white shadow-sm sticky top-0 z-20">
@@ -40,7 +12,7 @@ export default function Header({
           <h1 className="text-base font-bold text-slate-800 shrink-0">人事評価</h1>
           <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs shrink-0">
             {[['personal','個人'],['overall','全体'],['department','部門別'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
-              <button key={v} onClick={() => handleTabClick(v)}
+              <button key={v} onClick={() => setView(v)}
                 className={`px-3 py-1.5 transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
               >{l}</button>
             ))}
@@ -83,33 +55,6 @@ export default function Header({
           )}
         </div>
       </header>
-      {showAdminModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs p-6 space-y-4">
-            <h2 className="text-sm font-bold text-slate-800">管理者パスワードを入力</h2>
-            <input
-              type="password"
-              value={adminInput}
-              onChange={e => { setAdminInput(e.target.value); setAdminError(false); }}
-              onKeyDown={e => e.key === 'Enter' && confirmAdmin()}
-              placeholder="パスワード..."
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              autoFocus
-            />
-            {adminError && <p className="text-xs text-red-500">パスワードが違います</p>}
-            <div className="flex gap-2">
-              <button onClick={confirmAdmin}
-                className="flex-1 text-sm py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-                確認
-              </button>
-              <button onClick={() => { setShowAdminModal(false); setAdminInput(''); setAdminError(false); }}
-                className="flex-1 text-sm py-2 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors">
-                キャンセル
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
