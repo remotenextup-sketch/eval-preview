@@ -203,7 +203,7 @@ function ItemDetail({
 // ── GanttPanel ───────────────────────────────────────────────────
 const GANTT_MONTHS = (() => {
   const [y, m] = CURRENT_MONTH.split('/').map(Number);
-  return Array.from({ length: 4 }, (_, i) => {
+  return Array.from({ length: 12 }, (_, i) => {
     const raw = m + i;
     const year = y + Math.floor((raw - 1) / 12);
     const month = ((raw - 1) % 12) + 1;
@@ -254,12 +254,12 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">すべての項目が完了済みです</div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 bg-white z-10 shadow-sm">
+          <table className="border-collapse" style={{ minWidth: 'max-content', width: '100%' }}>
+            <thead className="sticky top-0 z-10 shadow-sm">
               <tr className="border-b border-slate-200">
-                <th className="text-left text-xs font-medium text-slate-500 px-4 py-2" style={{ width: '52%' }}>項目</th>
+                <th className="text-left text-xs font-medium text-slate-500 bg-white px-4 py-2 sticky left-0 z-20" style={{ minWidth: 200 }}>項目</th>
                 {GANTT_MONTHS.map(m => (
-                  <th key={m} className={`text-center text-xs font-medium py-2 px-1 ${m === CURRENT_MONTH ? 'text-indigo-600' : 'text-slate-500'}`} style={{ width: '12%' }}>
+                  <th key={m} className={`text-center text-xs font-medium py-2 px-1 ${m === CURRENT_MONTH ? 'bg-indigo-50 text-indigo-600' : 'bg-white text-slate-500'}`} style={{ minWidth: 52 }}>
                     <div>{m.slice(5)}月</div>
                     <div className="font-normal opacity-60">{m.slice(0, 4)}</div>
                   </th>
@@ -269,10 +269,11 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
             <tbody>
               {unachievedItems.map(item => (
                 <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-2.5 text-xs text-slate-700 leading-snug">
+                  <td className="px-4 py-2.5 text-xs text-slate-700 leading-snug bg-white sticky left-0 z-10 border-r border-slate-100" style={{ minWidth: 200 }}>
                     <span className="text-slate-400 mr-1">#{item.item_no}</span>{item.item_name}
                   </td>
                   {GANTT_MONTHS.map(month => {
+                    const isCurrent = month === CURRENT_MONTH;
                     const state = getCellState(item, month);
                     const plan = item.item_def_id ? planMap[`${item.item_def_id}/${month}`] : null;
                     const cellCls = state === 'planned'
@@ -283,7 +284,7 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
                           ? 'bg-red-400 hover:bg-red-500'
                           : 'bg-slate-100 hover:bg-slate-200 border border-slate-200';
                     return (
-                      <td key={month} className="text-center py-2 px-1">
+                      <td key={month} className={`text-center py-2 px-1 ${isCurrent ? 'bg-indigo-50' : ''}`} style={{ minWidth: 52 }}>
                         <button
                           onClick={() => state !== 'achieved' && onCellClick(item, month, plan ?? null)}
                           disabled={state === 'achieved'}
