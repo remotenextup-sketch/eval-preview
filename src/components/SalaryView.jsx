@@ -3,6 +3,19 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { supabase } from './supabaseClient';
 import { CURRENT_MONTH, RANK_SALARY } from '../constants';
 
+const FISCAL_YEARS = [
+  { label: '全期間',   value: 'all'  },
+  { label: '2024年度', value: '2024' },
+  { label: '2025年度', value: '2025' },
+  { label: '2026年度', value: '2026' },
+];
+
+function isInFiscalYear(month, fy) {
+  if (fy === 'all') return true;
+  const y = parseInt(fy);
+  return month >= `${y}/04` && month <= `${y + 1}/03`;
+}
+
 export default function SalaryView({ users }) {
   const [salaryUser, setSalaryUser]         = useState(null);
   const [salaryHistory, setSalaryHistory]   = useState([]);
@@ -19,6 +32,7 @@ export default function SalaryView({ users }) {
   const [bulkNote, setBulkNote]             = useState('');
   const [bulkSaving, setBulkSaving]         = useState(false);
   const [salaryView, setSalaryView]         = useState('personal');
+  const [graphFiscalYear, setGraphFiscalYear] = useState('all');
 
   // 加算機能
   const [addUsers, setAddUsers]             = useState([]);
@@ -162,6 +176,59 @@ export default function SalaryView({ users }) {
     URL.revokeObjectURL(a.href);
   };
 
+  // グラフ用: 選択年度でフィルタしたデータからユーザー別最新レコードを取得
+  const filteredSalaryData = allSalaryData.filter(d => isInFiscalYear(d.month, graphFiscalYear));
+  const userLatestInPeriod = (() => {
+    const map = {};
+    filteredSalaryData.forEach(d => {
+      if (!map[d.user_id] || d.month > map[d.user_id].month) map[d.user_id] = d;
+    });
+    return Object.values(map);
+  })();
+
+  // ランク別集計
+  const rankData = (() => {
+    const rankGroups = {};
+    userLatestInPeriod.forEach(d => {
+      const rank = d.users?.rank;
+      if (!rank) return;
+      const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
+      if (!rankGroups[rank]) rankGroups[rank] = [];
+      rankGroups[rank].push(total);
+    });
+    return Object.entries(rankGroups).map(([rank, vals]) => ({
+      rank,
+      avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+      max: Math.max(...vals),
+      min: Math.min(...vals),
+      count: vals.length,
+    }));
+  })();
+
+  // 年代別集計
+  const ageData = (() => {
+    const currentYear = new Date().getFullYear();
+    const groups = { '20代': [], '30代': [], '40代': [], '50代以上': [], '不明': [] };
+    userLatestInPeriod.forEach(d => {
+      const birthYear = d.users?.birth_year;
+      const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
+      if (!birthYear) { groups['不明'].push(total); return; }
+      const age = currentYear - birthYear;
+      if (age >= 50) groups['50代以上'].push(total);
+      else if (age >= 40) groups['40代'].push(total);
+      else if (age >= 30) groups['30代'].push(total);
+      else if (age >= 20) groups['20代'].push(total);
+      else groups['不明'].push(total);
+    });
+    return Object.entries(groups)
+      .map(([label, vals]) => vals.length ? ({
+        label,
+        avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+        count: vals.length,
+      }) : null)
+      .filter(Boolean);
+  })();
+
   const allMonths = [...new Set([...Object.keys(completedByMonth), ...salaryHistory.map(h => h.month), CURRENT_MONTH])].sort();
   const chartData = allMonths.map(month => {
     const hist = salaryHistory.find(h => h.month === month);
@@ -176,6 +243,7 @@ export default function SalaryView({ users }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {/* タブ切り替え */}
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 shrink-0">
         <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
           {[['personal','個人時給'],['admin','管理者ビュー']].map(([v,l]) => (
@@ -187,6 +255,7 @@ export default function SalaryView({ users }) {
         </div>
       </div>
 
+      {/* 個人時給ビュー */}
       {salaryView === 'personal' && (
         <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
           <div className="md:w-80 lg:w-96 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden">
@@ -311,180 +380,177 @@ export default function SalaryView({ users }) {
         </div>
       )}
 
+      {/* 管理者ビュー — 全セクションを1つのスクロールコンテナ内に収める */}
       {salaryView === 'admin' && (
-        <>
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className="space-y-4 max-w-5xl mx-auto">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="flex items-center border-b border-slate-200 px-4">
-                  {[['list','一覧'],['bulk','一括更新'],['add','加算']].map(([v,l]) => (
-                    <button key={v} onClick={() => setAdminTab(v)}
-                      className={`text-sm px-4 py-3 font-medium transition-colors border-b-2 ${adminTab === v ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                      {l}
-                    </button>
-                  ))}
-                  <div className="flex-1" />
-                  <div className="flex items-center gap-2 py-2">
-                    <label className="text-xs text-slate-500">月</label>
-                    <select value={adminMonth} onChange={e => setAdminMonth(e.target.value)}
-                      className="text-xs border border-slate-300 rounded px-2 py-1 bg-white focus:outline-none">
-                      {adminMonths.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                    <button onClick={exportCsv}
-                      className="text-xs px-3 py-1.5 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors">
-                      CSVエクスポート
-                    </button>
-                  </div>
+        <div className="flex-1 overflow-y-auto bg-slate-50 p-5">
+          <div className="space-y-6 max-w-5xl mx-auto">
+
+            {/* 一覧 / 一括更新 / 加算 カード */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="flex items-center border-b border-slate-200 px-4">
+                {[['list','一覧'],['bulk','一括更新'],['add','加算']].map(([v,l]) => (
+                  <button key={v} onClick={() => setAdminTab(v)}
+                    className={`text-sm px-4 py-3 font-medium transition-colors border-b-2 ${adminTab === v ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                    {l}
+                  </button>
+                ))}
+                <div className="flex-1" />
+                <div className="flex items-center gap-2 py-2">
+                  <label className="text-xs text-slate-500">月</label>
+                  <select value={adminMonth} onChange={e => setAdminMonth(e.target.value)}
+                    className="text-xs border border-slate-300 rounded px-2 py-1 bg-white focus:outline-none">
+                    {adminMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <button onClick={exportCsv}
+                    className="text-xs px-3 py-1.5 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors">
+                    CSVエクスポート
+                  </button>
                 </div>
+              </div>
 
-                {adminTab === 'list' && (
-                  <div className="overflow-x-auto">
-                    {adminLoading ? <p className="text-sm text-slate-400 text-center py-8">読み込み中...</p> : (
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-200 bg-slate-50">
-                            {['名前','ランク','基本時給','ボーナス','合計','確定','メモ'].map(h => (
-                              <th key={h} className={`py-2.5 px-4 text-slate-500 font-medium ${['基本時給','ボーナス','合計'].includes(h) ? 'text-right' : h === '確定' ? 'text-center' : 'text-left'}`}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {adminMonthData.length === 0 ? (
-                            <tr><td colSpan={7} className="text-center py-8 text-slate-400">この月のデータがありません</td></tr>
-                          ) : adminMonthData.map(d => (
-                            <tr key={d.id} className={`border-b border-slate-100 ${!d.confirmed ? 'bg-yellow-50' : ''}`}>
-                              <td className="py-2.5 px-4 font-medium text-slate-700">{d.users?.name ?? '−'}</td>
-                              <td className="py-2.5 px-4 text-slate-500">{d.users?.rank ?? '−'}</td>
-                              <td className="py-2.5 px-4 text-right">{(d.base_rate ?? 0).toLocaleString()}円</td>
-                              <td className="py-2.5 px-4 text-right text-green-600">+{d.item_bonus ?? 0}円</td>
-                              <td className="py-2.5 px-4 text-right font-semibold">{(d.total_rate ?? (d.base_rate ?? 0) + (d.item_bonus ?? 0)).toLocaleString()}円</td>
-                              <td className="py-2.5 px-4 text-center">
-                                {d.confirmed
-                                  ? <span className="text-green-600 font-medium">確定</span>
-                                  : <span className="text-amber-500 font-medium">未確定</span>}
-                              </td>
-                              <td className="py-2.5 px-4 text-slate-400">{d.note ?? ''}</td>
-                            </tr>
+              {adminTab === 'list' && (
+                <div className="overflow-x-auto">
+                  {adminLoading ? <p className="text-sm text-slate-400 text-center py-8">読み込み中...</p> : (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          {['名前','ランク','基本時給','ボーナス','合計','確定','メモ'].map(h => (
+                            <th key={h} className={`py-2.5 px-4 text-slate-500 font-medium ${['基本時給','ボーナス','合計'].includes(h) ? 'text-right' : h === '確定' ? 'text-center' : 'text-left'}`}>{h}</th>
                           ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
-
-                {adminTab === 'bulk' && (
-                  <div className="p-5 space-y-4">
-                    <p className="text-sm text-slate-600">対象月 <span className="font-semibold text-indigo-600">{adminMonth}</span> の基本時給を一括更新します</p>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 block mb-2">対象メンバーを選択</label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
-                        {users.map(u => (
-                          <label key={u.id} className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={bulkUsers.includes(u.id)}
-                              onChange={e => setBulkUsers(prev => e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id))}
-                              className="w-3.5 h-3.5 accent-indigo-600" />
-                            <span className="text-xs text-slate-700 truncate">{u.name}</span>
-                          </label>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminMonthData.length === 0 ? (
+                          <tr><td colSpan={7} className="text-center py-8 text-slate-400">この月のデータがありません</td></tr>
+                        ) : adminMonthData.map(d => (
+                          <tr key={d.id} className={`border-b border-slate-100 ${!d.confirmed ? 'bg-yellow-50' : ''}`}>
+                            <td className="py-2.5 px-4 font-medium text-slate-700">{d.users?.name ?? '−'}</td>
+                            <td className="py-2.5 px-4 text-slate-500">{d.users?.rank ?? '−'}</td>
+                            <td className="py-2.5 px-4 text-right">{(d.base_rate ?? 0).toLocaleString()}円</td>
+                            <td className="py-2.5 px-4 text-right text-green-600">+{d.item_bonus ?? 0}円</td>
+                            <td className="py-2.5 px-4 text-right font-semibold">{(d.total_rate ?? (d.base_rate ?? 0) + (d.item_bonus ?? 0)).toLocaleString()}円</td>
+                            <td className="py-2.5 px-4 text-center">
+                              {d.confirmed
+                                ? <span className="text-green-600 font-medium">確定</span>
+                                : <span className="text-amber-500 font-medium">未確定</span>}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-400">{d.note ?? ''}</td>
+                          </tr>
                         ))}
-                      </div>
-                      <button onClick={() => setBulkUsers(bulkUsers.length === users.length ? [] : users.map(u => u.id))}
-                        className="text-xs text-indigo-600 hover:underline mt-1">
-                        {bulkUsers.length === users.length ? '全解除' : '全選択'}
-                      </button>
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {adminTab === 'bulk' && (
+                <div className="p-5 space-y-4">
+                  <p className="text-sm text-slate-600">対象月 <span className="font-semibold text-indigo-600">{adminMonth}</span> の基本時給を一括更新します</p>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-2">対象メンバーを選択</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                      {users.map(u => (
+                        <label key={u.id} className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={bulkUsers.includes(u.id)}
+                            onChange={e => setBulkUsers(prev => e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id))}
+                            className="w-3.5 h-3.5 accent-indigo-600" />
+                          <span className="text-xs text-slate-700 truncate">{u.name}</span>
+                        </label>
+                      ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1">基本時給 (円) *</label>
-                        <input type="number" value={bulkRate} onChange={e => setBulkRate(e.target.value)} placeholder="例: 1300"
-                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1">メモ（任意）</label>
-                        <input type="text" value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="例: 最低賃金改定"
-                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                      </div>
-                    </div>
-                    <button onClick={handleBulkUpdate} disabled={bulkSaving || !bulkUsers.length || !bulkRate}
-                      className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
-                      {bulkSaving ? '更新中...' : `${bulkUsers.length}名 の基本時給を更新`}
+                    <button onClick={() => setBulkUsers(bulkUsers.length === users.length ? [] : users.map(u => u.id))}
+                      className="text-xs text-indigo-600 hover:underline mt-1">
+                      {bulkUsers.length === users.length ? '全解除' : '全選択'}
                     </button>
                   </div>
-                )}
-
-                {adminTab === 'add' && (
-                  <div className="p-5 space-y-4">
-                    <p className="text-sm text-slate-600">対象メンバーの基本時給に一定額を加算します（最低賃金改定など）</p>
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-medium text-slate-500 block mb-2">対象メンバーを選択</label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
-                        {users.map(u => (
-                          <label key={u.id} className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={addUsers.includes(u.id)}
-                              onChange={e => setAddUsers(prev => e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id))}
-                              className="w-3.5 h-3.5 accent-indigo-600" />
-                            <span className="text-xs text-slate-700 truncate">{u.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <button onClick={() => setAddUsers(addUsers.length === users.length ? [] : users.map(u => u.id))}
-                        className="text-xs text-indigo-600 hover:underline mt-1">
-                        {addUsers.length === users.length ? '全解除' : '全選択'}
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1">加算額 (円) *</label>
-                        <input type="number" value={addAmount} onChange={e => setAddAmount(e.target.value)} placeholder="例: 62"
-                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1">適用月</label>
-                        <input type="text" value={addMonth} onChange={e => setAddMonth(e.target.value)} placeholder="2026/06"
-                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                      </div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">基本時給 (円) *</label>
+                      <input type="number" value={bulkRate} onChange={e => setBulkRate(e.target.value)} placeholder="例: 1300"
+                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 block mb-1">メモ（任意）</label>
-                      <input type="text" value={addNote} onChange={e => setAddNote(e.target.value)} placeholder="例: 最低賃金改定"
+                      <input type="text" value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="例: 最低賃金改定"
                         className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
                     </div>
-                    <button onClick={() => setAddConfirm(true)} disabled={!addUsers.length || !addAmount || !addMonth}
-                      className="w-full text-sm py-2.5 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-40 font-medium">
-                      {addUsers.length}名に {addAmount ? `+${addAmount}円` : '加算額'} を適用
+                  </div>
+                  <button onClick={handleBulkUpdate} disabled={bulkSaving || !bulkUsers.length || !bulkRate}
+                    className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
+                    {bulkSaving ? '更新中...' : `${bulkUsers.length}名 の基本時給を更新`}
+                  </button>
+                </div>
+              )}
+
+              {adminTab === 'add' && (
+                <div className="p-5 space-y-4">
+                  <p className="text-sm text-slate-600">対象メンバーの基本時給に一定額を加算します（最低賃金改定など）</p>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-2">対象メンバーを選択</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                      {users.map(u => (
+                        <label key={u.id} className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={addUsers.includes(u.id)}
+                            onChange={e => setAddUsers(prev => e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id))}
+                            className="w-3.5 h-3.5 accent-indigo-600" />
+                          <span className="text-xs text-slate-700 truncate">{u.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button onClick={() => setAddUsers(addUsers.length === users.length ? [] : users.map(u => u.id))}
+                      className="text-xs text-indigo-600 hover:underline mt-1">
+                      {addUsers.length === users.length ? '全解除' : '全選択'}
                     </button>
                   </div>
-                )}
-              </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">加算額 (円) *</label>
+                      <input type="number" value={addAmount} onChange={e => setAddAmount(e.target.value)} placeholder="例: 62"
+                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">適用月</label>
+                      <input type="text" value={addMonth} onChange={e => setAddMonth(e.target.value)} placeholder="2026/06"
+                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">メモ（任意）</label>
+                    <input type="text" value={addNote} onChange={e => setAddNote(e.target.value)} placeholder="例: 最低賃金改定"
+                      className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  </div>
+                  <button onClick={() => setAddConfirm(true)} disabled={!addUsers.length || !addAmount || !addMonth}
+                    className="w-full text-sm py-2.5 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-40 font-medium">
+                    {addUsers.length}名に {addAmount ? `+${addAmount}円` : '加算額'} を適用
+                  </button>
+                </div>
+              )}
             </div>
-        </div>
 
-        {/* ランク別平均時給 */}
-        {(() => {
-          const userLatest = {};
-          allSalaryData.forEach(d => {
-            if (!userLatest[d.user_id] || d.month > userLatest[d.user_id].month) userLatest[d.user_id] = d;
-          });
-          const rankGroups = {};
-          Object.values(userLatest).forEach(d => {
-            const rank = d.users?.rank;
-            if (!rank) return;
-            const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
-            if (!rankGroups[rank]) rankGroups[rank] = [];
-            rankGroups[rank].push(total);
-          });
-          const rankData = Object.entries(rankGroups).map(([rank, vals]) => ({
-            rank,
-            avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
-            max: Math.max(...vals),
-            min: Math.min(...vals),
-            count: vals.length,
-          }));
-          if (!rankData.length) return null;
-          return (
-            <div className="max-w-5xl mx-auto mt-4">
+            {/* 年度切り替えボタン（ランク別・年代別グラフ共通） */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-slate-500">グラフ集計期間：</span>
+              <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
+                {FISCAL_YEARS.map(({ label, value }) => (
+                  <button key={value} onClick={() => setGraphFiscalYear(value)}
+                    className={`px-3 py-1.5 transition-colors ${graphFiscalYear === value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {graphFiscalYear !== 'all' && (
+                <span className="text-xs text-slate-400">
+                  {graphFiscalYear}/04 〜 {parseInt(graphFiscalYear) + 1}/03
+                </span>
+              )}
+            </div>
+
+            {/* ランク別平均時給 */}
+            {rankData.length > 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-slate-100">
-                  <h3 className="text-sm font-semibold text-slate-700">ランク別平均時給（直近確定）</h3>
+                <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">ランク別平均時給</h3>
+                  <span className="text-xs text-slate-400">各ランクの直近レコードで集計</span>
                 </div>
                 <div className="p-5">
                   <ResponsiveContainer width="100%" height={220}>
@@ -511,93 +577,66 @@ export default function SalaryView({ users }) {
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        })()}
+            )}
 
-        {/* 年代別平均時給 */}
-        {(() => {
-          const currentYear = new Date().getFullYear();
-          const userLatest = {};
-          allSalaryData.forEach(d => {
-            if (!userLatest[d.user_id] || d.month > userLatest[d.user_id].month) userLatest[d.user_id] = d;
-          });
-          const groups = { '20代': [], '30代': [], '40代': [], '50代以上': [], '不明': [] };
-          Object.values(userLatest).forEach(d => {
-            const birthYear = d.users?.birth_year;
-            const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
-            if (!birthYear) { groups['不明'].push(total); return; }
-            const age = currentYear - birthYear;
-            if (age >= 50) groups['50代以上'].push(total);
-            else if (age >= 40) groups['40代'].push(total);
-            else if (age >= 30) groups['30代'].push(total);
-            else if (age >= 20) groups['20代'].push(total);
-            else groups['不明'].push(total);
-          });
-          const ageData = Object.entries(groups)
-            .map(([label, vals]) => vals.length ? ({
-              label,
-              avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
-              count: vals.length,
-            }) : null)
-            .filter(Boolean);
-          if (!ageData.length) return null;
-          return (
-            <div className="max-w-5xl mx-auto mt-4 pb-6">
+            {/* 年代別平均時給 */}
+            {ageData.length > 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-slate-100">
-                  <h3 className="text-sm font-semibold text-slate-700">年代別平均時給（直近確定）</h3>
+                <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">年代別平均時給</h3>
+                  <span className="text-xs text-slate-400">各メンバーの直近レコードで集計</span>
                 </div>
                 <div className="p-5">
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={ageData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+                    <BarChart data={ageData} margin={{ top: 20, right: 8, left: -8, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                       <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} unit="円" domain={['auto', 'auto']} />
                       <Tooltip formatter={v => [`${Number(v).toLocaleString()}円`, '平均時給']} />
-                      <Bar dataKey="avg" name="平均時給" fill="#f59e0b" radius={[4,4,0,0]} label={{ position: 'top', fontSize: 10, formatter: v => `${Number(v).toLocaleString()}円` }} />
+                      <Bar dataKey="avg" name="平均時給" fill="#f59e0b" radius={[4,4,0,0]}
+                        label={{ position: 'top', fontSize: 10, formatter: v => `${Number(v).toLocaleString()}円` }} />
                     </BarChart>
                   </ResponsiveContainer>
-                  <p className="text-xs text-slate-400 mt-2">※ birth_year未登録のメンバーは「不明」グループに含まれます</p>
+                  <p className="text-xs text-slate-400 mt-2">※ 生年未登録のメンバーは「不明」グループに含まれます</p>
                 </div>
               </div>
-            </div>
-          );
-        })()}
+            )}
 
-        {/* 加算確認モーダル */}
-        {addConfirm && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-              <h3 className="text-sm font-bold text-slate-800">加算を実行しますか？</h3>
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-slate-700 space-y-1">
-                <p>対象: <span className="font-semibold">{addUsers.length}名</span></p>
-                <p>加算額: <span className="font-semibold">+{addAmount}円</span></p>
-                <p>適用月: <span className="font-semibold">{addMonth}</span></p>
-                {addNote && <p>メモ: {addNote}</p>}
-                <p className="text-slate-500 pt-1">該当月のレコードがないメンバーは直近の時給に加算して新規作成します</p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={handleAddAmount} disabled={addSaving}
-                  className="flex-1 text-sm py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-50 font-medium">
-                  {addSaving ? '処理中...' : '実行する'}
-                </button>
-                <button onClick={() => setAddConfirm(false)} disabled={addSaving}
-                  className="flex-1 text-sm py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
-                  キャンセル
-                </button>
-              </div>
+          </div>
+        </div>
+      )}
+
+      {/* 加算確認モーダル */}
+      {addConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-sm font-bold text-slate-800">加算を実行しますか？</h3>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-slate-700 space-y-1">
+              <p>対象: <span className="font-semibold">{addUsers.length}名</span></p>
+              <p>加算額: <span className="font-semibold">+{addAmount}円</span></p>
+              <p>適用月: <span className="font-semibold">{addMonth}</span></p>
+              {addNote && <p>メモ: {addNote}</p>}
+              <p className="text-slate-500 pt-1">該当月のレコードがないメンバーは直近の時給に加算して新規作成します</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleAddAmount} disabled={addSaving}
+                className="flex-1 text-sm py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-50 font-medium">
+                {addSaving ? '処理中...' : '実行する'}
+              </button>
+              <button onClick={() => setAddConfirm(false)} disabled={addSaving}
+                className="flex-1 text-sm py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+                キャンセル
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* 加算トースト */}
-        {addToast && (
-          <div className="fixed bottom-6 right-6 z-50 bg-amber-500 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg pointer-events-none">
-            {addToast}
-          </div>
-        )}
-        </>
+      {/* 加算トースト */}
+      {addToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-amber-500 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg pointer-events-none">
+          {addToast}
+        </div>
       )}
     </div>
   );
