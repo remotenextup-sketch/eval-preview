@@ -11,7 +11,7 @@ export default function Header({
         <div className="max-w-full px-3 py-1.5 flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-700 shrink-0">人事評価</span>
           <div className="flex rounded border border-slate-200 overflow-hidden shrink-0">
-            {[['personal','個人'],['overall','全体'],['department','部門別'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
+            {[['personal','個人'],['overall','全体'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)}
                 className={`px-2.5 py-1 text-xs transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
               >{l}</button>

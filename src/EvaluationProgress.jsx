@@ -9,7 +9,6 @@ import {
 import Header       from './components/Header';
 import PersonalView from './components/PersonalView';
 import OverallView  from './components/OverallView';
-import DepartmentView from './components/DepartmentView';
 import AdminView    from './components/AdminView';
 import MembersView  from './components/MemberView';
 import SalaryView   from './components/SalaryView';
@@ -107,7 +106,7 @@ export default function EvaluationProgress() {
 
   // ② 全体/部門別データ
   useEffect(() => {
-    if ((view !== 'overall' && view !== 'department') || overallLoaded) return;
+    if (view !== 'overall' || overallLoaded) return;
     setOverallLoading(true);
     Promise.all([
       supabase.from('evaluation_progress').select('achieved_month, user_name, item_no').eq('status', 'completed').limit(5000),
@@ -599,16 +598,6 @@ export default function EvaluationProgress() {
             completedProgress={completedProgress}
             stuckProgress={stuckProgress}
             allItemDefs={allItemDefs}
-            allUsersData={allUsersData}
-          />
-        </div>
-      )}
-
-      {view === 'department' && (
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <DepartmentView
-            overallLoading={overallLoading}
-            completedProgress={completedProgress}
             allUsersData={allUsersData}
           />
         </div>

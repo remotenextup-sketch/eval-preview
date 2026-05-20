@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell,
 } from 'recharts';
-import { CURRENT_MONTH, RANK_TRANSITIONS, RANK_CHART_COLORS } from '../constants';
+import { CURRENT_MONTH, RANK_TRANSITIONS, RANK_CHART_COLORS, DEPT_COLORS } from '../constants';
 
 export default function OverallView({ overallLoading, completedProgress, stuckProgress, allItemDefs, allUsersData }) {
   const [expandedStuck, setExpandedStuck]   = useState(null);
@@ -96,6 +96,18 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
     return { ranks, data };
   })();
 
+  const departmentMonthlyData = (() => {
+    if (!allUsersData.length || !completedProgress.length) return { departments: [], data: [] };
+    const userDeptMap = {};
+    allUsersData.forEach(u => { const pname = u.progress_name ?? u.name; const dept = Array.isArray(u.department) ? u.department[0] : null; if (pname && dept) userDeptMap[pname] = dept; });
+    const counts = {};
+    completedProgress.forEach(p => { const dept = userDeptMap[p.user_name]; if (!dept || !/^\d{4}\/\d{2}$/.test(p.achieved_month ?? '')) return; const key = `${dept}||${p.achieved_month}`; counts[key] = (counts[key] || 0) + 1; });
+    const months = [...new Set(completedProgress.filter(p => /^\d{4}\/\d{2}$/.test(p.achieved_month ?? '')).map(p => p.achieved_month))].sort();
+    const departments = [...new Set(Object.values(userDeptMap))].sort();
+    const data = months.map(month => { const row = { month }; departments.forEach(d => { row[d] = counts[`${d}||${month}`] || 0; }); return row; });
+    return { departments, data };
+  })();
+
   const individualData = overallIndivUser ? (() => {
     const pName = overallIndivUser.progress_name ?? overallIndivUser.name;
     const counts = {};
@@ -110,7 +122,7 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h2 className="text-base font-semibold text-slate-700">月次クリア数</h2>
           <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
-            {[['all','全体'],['rank','ランク別'],['personal','個人別'],['fiscal','年度別']].map(([v,l]) => (
+            {[['all','全体'],['rank','ランク別'],['personal','個人別'],['fiscal','年度別'],['department','部門別']].map(([v,l]) => (
               <button key={v} onClick={() => setOverallChartMode(v)}
                 className={`px-3 py-1.5 transition-colors ${overallChartMode === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 {l}
@@ -166,6 +178,23 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
                       radius={i === fiscalYearData.ranks.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
                   ))}
                 </BarChart>
+              </ResponsiveContainer>
+            ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>
+          )}
+
+          {overallChartMode === 'department' && (
+            departmentMonthlyData.data.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={departmentMonthlyData.data} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {departmentMonthlyData.departments.map((dept, i) => (
+                    <Line key={dept} type="monotone" dataKey={dept} stroke={DEPT_COLORS[i % DEPT_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                  ))}
+                </LineChart>
               </ResponsiveContainer>
             ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>
           )}
