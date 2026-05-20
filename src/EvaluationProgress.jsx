@@ -10,6 +10,7 @@ import Header       from './components/Header';
 import PersonalView from './components/PersonalView';
 import OverallView  from './components/OverallView';
 import AdminView    from './components/AdminView';
+import SurveyView   from './components/SurveyView';
 import MembersView  from './components/MemberView';
 import SalaryView   from './components/SalaryView';
 
@@ -600,6 +601,12 @@ export default function EvaluationProgress() {
             allItemDefs={allItemDefs}
             allUsersData={allUsersData}
           />
+        </div>
+      )}
+
+      {view === 'survey' && (
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <SurveyView selectedUser={selectedUser} users={users} />
         </div>
       )}
 
