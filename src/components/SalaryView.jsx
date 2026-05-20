@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabaseClient';
 import { CURRENT_MONTH, RANK_SALARY } from '../constants';
 
@@ -56,7 +56,7 @@ export default function SalaryView({ users }) {
   const loadAdminData = async () => {
     setAdminLoading(true);
     const { data } = await supabase.from('hourly_rate_history')
-      .select('id, user_id, month, base_rate, item_bonus, total_rate, confirmed, note, users(name, rank)')
+      .select('id, user_id, month, base_rate, item_bonus, total_rate, confirmed, note, users(name, rank, birth_year)')
       .order('month').limit(5000);
     setAllSalaryData(data || []);
     setAdminLoading(false);
@@ -457,6 +457,113 @@ export default function SalaryView({ users }) {
               </div>
             </div>
         </div>
+
+        {/* ランク別平均時給 */}
+        {(() => {
+          const userLatest = {};
+          allSalaryData.forEach(d => {
+            if (!userLatest[d.user_id] || d.month > userLatest[d.user_id].month) userLatest[d.user_id] = d;
+          });
+          const rankGroups = {};
+          Object.values(userLatest).forEach(d => {
+            const rank = d.users?.rank;
+            if (!rank) return;
+            const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
+            if (!rankGroups[rank]) rankGroups[rank] = [];
+            rankGroups[rank].push(total);
+          });
+          const rankData = Object.entries(rankGroups).map(([rank, vals]) => ({
+            rank,
+            avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+            max: Math.max(...vals),
+            min: Math.min(...vals),
+            count: vals.length,
+          }));
+          if (!rankData.length) return null;
+          return (
+            <div className="max-w-5xl mx-auto mt-4">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100">
+                  <h3 className="text-sm font-semibold text-slate-700">ランク別平均時給（直近確定）</h3>
+                </div>
+                <div className="p-5">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={rankData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="rank" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} unit="円" domain={['auto', 'auto']} />
+                      <Tooltip formatter={v => [`${Number(v).toLocaleString()}円`]} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="avg" name="平均" fill="#6366f1" radius={[4,4,0,0]} />
+                      <Bar dataKey="max" name="最高" fill="#34d399" radius={[4,4,0,0]} />
+                      <Bar dataKey="min" name="最低" fill="#f87171" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {rankData.map(d => (
+                      <div key={d.rank} className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100 flex-1 min-w-[90px]">
+                        <p className="text-xs font-semibold text-slate-600 mb-1">{d.rank}</p>
+                        <p className="text-lg font-bold text-indigo-600">{d.avg.toLocaleString()}<span className="text-xs font-normal text-slate-400 ml-0.5">円</span></p>
+                        <p className="text-xs text-slate-400 mt-0.5">{d.min.toLocaleString()}〜{d.max.toLocaleString()}円</p>
+                        <p className="text-xs text-slate-300">{d.count}人</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 年代別平均時給 */}
+        {(() => {
+          const currentYear = new Date().getFullYear();
+          const userLatest = {};
+          allSalaryData.forEach(d => {
+            if (!userLatest[d.user_id] || d.month > userLatest[d.user_id].month) userLatest[d.user_id] = d;
+          });
+          const groups = { '20代': [], '30代': [], '40代': [], '50代以上': [], '不明': [] };
+          Object.values(userLatest).forEach(d => {
+            const birthYear = d.users?.birth_year;
+            const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
+            if (!birthYear) { groups['不明'].push(total); return; }
+            const age = currentYear - birthYear;
+            if (age >= 50) groups['50代以上'].push(total);
+            else if (age >= 40) groups['40代'].push(total);
+            else if (age >= 30) groups['30代'].push(total);
+            else if (age >= 20) groups['20代'].push(total);
+            else groups['不明'].push(total);
+          });
+          const ageData = Object.entries(groups)
+            .map(([label, vals]) => vals.length ? ({
+              label,
+              avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+              count: vals.length,
+            }) : null)
+            .filter(Boolean);
+          if (!ageData.length) return null;
+          return (
+            <div className="max-w-5xl mx-auto mt-4 pb-6">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100">
+                  <h3 className="text-sm font-semibold text-slate-700">年代別平均時給（直近確定）</h3>
+                </div>
+                <div className="p-5">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={ageData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} unit="円" domain={['auto', 'auto']} />
+                      <Tooltip formatter={v => [`${Number(v).toLocaleString()}円`, '平均時給']} />
+                      <Bar dataKey="avg" name="平均時給" fill="#f59e0b" radius={[4,4,0,0]} label={{ position: 'top', fontSize: 10, formatter: v => `${Number(v).toLocaleString()}円` }} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <p className="text-xs text-slate-400 mt-2">※ birth_year未登録のメンバーは「不明」グループに含まれます</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 加算確認モーダル */}
         {addConfirm && (

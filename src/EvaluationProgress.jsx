@@ -478,6 +478,12 @@ export default function EvaluationProgress() {
     if (!error && data) {
       setPlans(prev => [...prev, data].sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '')));
       setPlanForm({ item_id: '', planned_month: '', start_date: '', due_date: '', created_by: '' });
+      const progressItem = items.find(i => i.item_def_id === planForm.item_id);
+      if (progressItem?.status === 'pending') {
+        await supabase.from('evaluation_progress').update({ status: 'planned', updated_at: new Date().toISOString() }).eq('id', progressItem.id);
+        setItems(prev => prev.map(i => i.id === progressItem.id ? { ...i, status: 'planned' } : i));
+        setSelectedItem(prev => prev?.id === progressItem.id ? { ...prev, status: 'planned' } : prev);
+      }
     }
     setSavingPlan(false);
   };
@@ -488,24 +494,55 @@ export default function EvaluationProgress() {
   };
 
   const deletePlan = async (planId) => {
+    const plan = plans.find(p => p.id === planId);
     const { error } = await supabase.from('evaluation_plans').delete().eq('id', planId);
-    if (!error) setPlans(prev => prev.filter(p => p.id !== planId));
+    if (!error) {
+      const remainingPlans = plans.filter(p => p.id !== planId);
+      setPlans(remainingPlans);
+      if (plan) {
+        const hasOtherPlans = remainingPlans.some(p => p.item_id === plan.item_id);
+        if (!hasOtherPlans) {
+          const progressItem = items.find(i => i.item_def_id === plan.item_id);
+          if (progressItem?.status === 'planned') {
+            await supabase.from('evaluation_progress').update({ status: 'pending', updated_at: new Date().toISOString() }).eq('id', progressItem.id);
+            setItems(prev => prev.map(i => i.id === progressItem.id ? { ...i, status: 'pending' } : i));
+            setSelectedItem(prev => prev?.id === progressItem.id ? { ...prev, status: 'pending' } : prev);
+          }
+        }
+      }
+    }
   };
 
   const togglePlanCell = async (item, month, existingPlan) => {
     if (!selectedUser) return;
     if (existingPlan) {
       const { error } = await supabase.from('evaluation_plans').delete().eq('id', existingPlan.id);
-      if (!error) setPlans(prev => prev.filter(p => p.id !== existingPlan.id));
+      if (!error) {
+        const remainingPlans = plans.filter(p => p.id !== existingPlan.id);
+        setPlans(remainingPlans);
+        const hasOtherPlans = remainingPlans.some(p => p.item_id === existingPlan.item_id);
+        if (!hasOtherPlans && item.status === 'planned') {
+          await supabase.from('evaluation_progress').update({ status: 'pending', updated_at: new Date().toISOString() }).eq('id', item.id);
+          setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending' } : i));
+          setSelectedItem(prev => prev?.id === item.id ? { ...prev, status: 'pending' } : prev);
+        }
+      }
     } else {
-      const status = month <= CURRENT_MONTH ? 'overdue' : 'planned';
+      const planStatus = month <= CURRENT_MONTH ? 'overdue' : 'planned';
       const { data, error } = await supabase.from('evaluation_plans').insert({
         user_id: selectedUser.id,
         item_id: item.item_def_id,
         planned_month: month,
-        status,
+        status: planStatus,
       }).select('*, evaluation_items(item_name)').single();
-      if (!error && data) setPlans(prev => [...prev, data]);
+      if (!error && data) {
+        setPlans(prev => [...prev, data]);
+        if (item.status === 'pending') {
+          await supabase.from('evaluation_progress').update({ status: 'planned', updated_at: new Date().toISOString() }).eq('id', item.id);
+          setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'planned' } : i));
+          setSelectedItem(prev => prev?.id === item.id ? { ...prev, status: 'planned' } : prev);
+        }
+      }
     }
   };
 

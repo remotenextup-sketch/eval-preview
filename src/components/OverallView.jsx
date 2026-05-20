@@ -69,6 +69,33 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
     return { ranks, data };
   })();
 
+  const fiscalYearData = (() => {
+    if (!allItemDefs.length || !completedProgress.length) return { ranks: [], data: [] };
+    const itemRankMap = {};
+    allItemDefs.forEach(d => { if (d.no != null) itemRankMap[d.no] = d.rank; });
+    const counts = {};
+    completedProgress.forEach(p => {
+      if (!/^\d{4}\/\d{2}$/.test(p.achieved_month ?? '')) return;
+      const rank = itemRankMap[p.item_no];
+      if (!rank) return;
+      const [year, month] = p.achieved_month.split('/').map(Number);
+      const fy = month >= 4 ? year : year - 1;
+      const key = `${fy}||${rank}`;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    const fiscalYears = [...new Set(completedProgress
+      .filter(p => /^\d{4}\/\d{2}$/.test(p.achieved_month ?? ''))
+      .map(p => { const [y, m] = p.achieved_month.split('/').map(Number); return m >= 4 ? y : y - 1; })
+    )].sort();
+    const ranks = [...new Set(Object.values(itemRankMap))].filter(Boolean);
+    const data = fiscalYears.map(fy => {
+      const row = { fy: `${fy}年度` };
+      ranks.forEach(r => { row[r] = counts[`${fy}||${r}`] || 0; });
+      return row;
+    });
+    return { ranks, data };
+  })();
+
   const individualData = overallIndivUser ? (() => {
     const pName = overallIndivUser.progress_name ?? overallIndivUser.name;
     const counts = {};
@@ -83,7 +110,7 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h2 className="text-base font-semibold text-slate-700">月次クリア数</h2>
           <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
-            {[['all','全体'],['rank','ランク別'],['personal','個人別']].map(([v,l]) => (
+            {[['all','全体'],['rank','ランク別'],['personal','個人別'],['fiscal','年度別']].map(([v,l]) => (
               <button key={v} onClick={() => setOverallChartMode(v)}
                 className={`px-3 py-1.5 transition-colors ${overallChartMode === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 {l}
@@ -119,6 +146,24 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
                   {rankMonthlyData.ranks.map((rank, i) => (
                     <Bar key={rank} dataKey={rank} stackId="a" fill={RANK_CHART_COLORS[i % RANK_CHART_COLORS.length]}
                       radius={i === rankMonthlyData.ranks.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>
+          )}
+
+          {overallChartMode === 'fiscal' && (
+            fiscalYearData.data.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={fiscalYearData.data} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="fy" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {fiscalYearData.ranks.map((rank, i) => (
+                    <Bar key={rank} dataKey={rank} stackId="a" fill={RANK_CHART_COLORS[i % RANK_CHART_COLORS.length]}
+                      radius={i === fiscalYearData.ranks.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
