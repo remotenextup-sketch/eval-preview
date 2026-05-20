@@ -211,7 +211,7 @@ export default function SurveyView({ selectedUser, users }) {
 
   /* ── admin PIN ── */
   const handleAdminAuth = () => {
-    if (pinInput === MASTER_PIN) {
+    if (pinInput.trim() === MASTER_PIN) {
       sessionStorage.setItem(SURVEY_ADMIN_KEY, 'true');
       setAdminAuth(true);
       setShowPinModal(false);
@@ -302,6 +302,7 @@ export default function SurveyView({ selectedUser, users }) {
             <input
               ref={pinRef}
               type="password"
+              autoComplete="off"
               value={pinInput}
               onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
               onKeyDown={e => e.key === 'Enter' && handleAdminAuth()}
@@ -311,8 +312,8 @@ export default function SurveyView({ selectedUser, users }) {
             />
             {pinError && <p className="text-xs text-red-500 text-center">{pinError}</p>}
             <div className="flex gap-2">
-              <button onClick={handleAdminAuth} disabled={pinInput.length < 4}
-                className="flex-1 text-sm py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-40 font-medium">
+              <button onClick={handleAdminAuth}
+                className={`flex-1 text-sm py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium ${pinInput.length < 4 ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 認証
               </button>
               <button onClick={() => { setShowPinModal(false); setPinInput(''); setPinError(''); }}
