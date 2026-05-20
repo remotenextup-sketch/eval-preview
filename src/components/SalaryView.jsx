@@ -55,7 +55,7 @@ export default function SalaryView({ users }) {
   const [bulkRate, setBulkRate]             = useState('');
   const [bulkNote, setBulkNote]             = useState('');
   const [bulkSaving, setBulkSaving]         = useState(false);
-  const [salaryView, setSalaryView]         = useState('personal');
+  const [salaryView, setSalaryView]         = useState(() => readAuth()?.type === 'admin' ? 'admin' : 'personal');
   const [graphFiscalYear, setGraphFiscalYear] = useState('all');
 
   const [addUsers, setAddUsers]             = useState([]);
@@ -121,6 +121,7 @@ export default function SalaryView({ users }) {
       const auth = { type: 'admin' };
       saveAuth(auth);
       setPinAuth(auth);
+      setSalaryView('admin');
       return;
     }
     if (!pinUserId) { setPinError('名前を選択してください'); return; }
@@ -376,6 +377,7 @@ export default function SalaryView({ users }) {
               <input
                 ref={pinInputRef}
                 type="password"
+                autoComplete="off"
                 value={pinDigits}
                 onChange={e => setPinDigits(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 onKeyDown={e => e.key === 'Enter' && (pinMode === 'auth' ? handlePinAuth() : handlePinSet())}
@@ -412,12 +414,11 @@ export default function SalaryView({ users }) {
             {/* ボタン */}
             <button
               onClick={pinMode === 'auth' ? handlePinAuth : handlePinSet}
-              disabled={
-                pinLoading ||
-                pinDigits.length < 4 ||
-                (pinMode === 'set' && pinConfirm.length < 4)
-              }
-              className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium"
+              className={`w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium ${
+                pinLoading || pinDigits.length < 4 || (pinMode === 'set' && pinConfirm.length < 4)
+                  ? 'opacity-40 cursor-not-allowed'
+                  : ''
+              }`}
             >
               {pinLoading
                 ? '確認中...'
