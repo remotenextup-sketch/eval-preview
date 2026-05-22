@@ -200,6 +200,119 @@ function ItemDetail({
   );
 }
 
+// ── QuestionAnswerCard ───────────────────────────────────────────
+function QuestionAnswerCard({ q, onAnswer }) {
+  const [showForm, setShowForm] = useState(false);
+  const [answerText, setAnswerText] = useState('');
+  const [answererName, setAnswererName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const isAnswered = q.status === 'answered';
+
+  return (
+    <div className={`rounded-xl border p-3 ${isAnswered ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-yellow-50 border-yellow-200'}`}>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {q.evaluation_items?.item_name && (
+            <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{q.evaluation_items.item_name}</span>
+          )}
+          <span className="text-xs text-slate-400">{new Date(q.created_at).toLocaleDateString('ja-JP')}</span>
+        </div>
+        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isAnswered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+          {isAnswered ? '回答済' : '未回答'}
+        </span>
+      </div>
+      <p className="text-sm text-slate-800 mb-2">Q: {q.question}</p>
+      {isAnswered ? (
+        <div className="bg-white rounded-lg p-2.5 border border-green-200">
+          <p className="text-xs text-green-700 font-medium">A（{q.answered_by}）</p>
+          <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{q.answer}</p>
+        </div>
+      ) : !showForm ? (
+        <button onClick={() => setShowForm(true)} className="text-xs text-indigo-600 hover:underline">回答する</button>
+      ) : (
+        <div className="space-y-1.5 mt-1">
+          <input type="text" value={answererName} onChange={e => setAnswererName(e.target.value)}
+            placeholder="回答者名..."
+            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+          <textarea value={answerText} onChange={e => setAnswerText(e.target.value)}
+            placeholder="回答内容..." rows={2}
+            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+          <div className="flex gap-1.5">
+            <button onClick={async () => {
+              if (!answerText.trim() || !answererName.trim()) return;
+              setSubmitting(true);
+              await onAnswer(q.id, answerText.trim(), answererName.trim());
+              setSubmitting(false); setShowForm(false);
+            }} disabled={submitting || !answerText.trim() || !answererName.trim()}
+              className="text-xs px-2.5 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40">
+              {submitting ? '...' : '回答する'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg">キャンセル</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MyQuestionsPanel({ selectedUser }) {
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const userName = selectedUser?.progress_name ?? selectedUser?.name;
+
+  useEffect(() => {
+    if (!userName) return;
+    setLoading(true);
+    supabase.from('item_questions')
+      .select('*, evaluation_items(item_name, rank)')
+      .eq('user_name', userName)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setQuestions(data || []); setLoading(false); });
+  }, [userName]);
+
+  const handleAnswer = async (qId, answer, answeredBy) => {
+    const { error } = await supabase.from('item_questions')
+      .update({ answer, answered_by: answeredBy, status: 'answered' }).eq('id', qId);
+    if (!error) setQuestions(prev => prev.map(q => q.id === qId ? { ...q, answer, answered_by: answeredBy, status: 'answered' } : q));
+  };
+
+  const unanswered = questions.filter(q => q.status !== 'answered');
+  const answered = questions.filter(q => q.status === 'answered');
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold text-slate-700">{selectedUser?.name} の質問一覧</h2>
+        <p className="text-xs text-slate-400 mt-0.5">未回答: {unanswered.length}件 / 全: {questions.length}件</p>
+      </div>
+      {loading ? (
+        <p className="text-sm text-slate-400 text-center py-8">読み込み中...</p>
+      ) : questions.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-8">質問がありません</p>
+      ) : (
+        <>
+          {unanswered.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-yellow-700 mb-2">未回答 ({unanswered.length}件)</p>
+              <div className="space-y-2">
+                {unanswered.map(q => <QuestionAnswerCard key={q.id} q={q} onAnswer={handleAnswer} />)}
+              </div>
+            </div>
+          )}
+          {answered.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-slate-400 mb-2">回答済 ({answered.length}件)</p>
+              <div className="space-y-2">
+                {answered.map(q => <QuestionAnswerCard key={q.id} q={q} onAnswer={handleAnswer} />)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── GanttPanel ───────────────────────────────────────────────────
 const GANTT_MONTHS = (() => {
   const [y, m] = CURRENT_MONTH.split('/').map(Number);
@@ -416,10 +529,46 @@ function ListPane({
   loading, salarySummary, statusFilter, setStatusFilter,
   monthFilter, setMonthFilter, filteredItems, items,
   availableMonths, statusCounts, selectedUser, onItemClick, activeId,
+  kpiTarget, currentMonthCount,
 }) {
   return (
     <div className="flex flex-col h-full">
       <div className="bg-white border-b border-slate-200 px-3 py-1.5 space-y-1 shrink-0">
+        {!loading && kpiTarget && (
+          <div className="bg-purple-50 border border-purple-100 rounded-lg p-2">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold text-purple-700">今月の目標</p>
+              <p className="text-xs font-bold text-purple-600">
+                {currentMonthCount} / {kpiTarget.target_count}件
+                <span className="ml-1 font-normal text-purple-400">
+                  ({Math.round((currentMonthCount / kpiTarget.target_count) * 100)}%)
+                </span>
+              </p>
+            </div>
+            <div className="w-full bg-purple-100 rounded-full h-1.5 mb-1">
+              <div
+                className={`h-1.5 rounded-full transition-all ${
+                  currentMonthCount >= kpiTarget.target_count * 1.2 ? 'bg-green-500' :
+                  currentMonthCount <= kpiTarget.target_count * 0.8 ? 'bg-red-400' : 'bg-purple-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.round((currentMonthCount / kpiTarget.target_count) * 100))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-purple-400">
+                {currentMonthCount >= kpiTarget.target_count
+                  ? '今月の目標達成！'
+                  : `目標まであと${kpiTarget.target_count - currentMonthCount}件`}
+              </p>
+              {salarySummary.remaining > 0 && (
+                <p className="text-xs text-slate-400">ランクアップまで残り{salarySummary.remaining}件</p>
+              )}
+            </div>
+            {kpiTarget.note && (
+              <p className="text-xs text-slate-500 mt-1 italic border-t border-purple-100 pt-1">"{kpiTarget.note}"</p>
+            )}
+          </div>
+        )}
         {!loading && salarySummary.total > 0 && (
           <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2">
             <div className="flex items-center justify-between mb-1">
@@ -585,11 +734,14 @@ export default function PersonalView({
   plans, plansLoading, onCellClick,
   detailProps,
   ngModal, setNgModal, ngReasonText, setNgReasonText, onConfirmNgReason,
+  showQuestionsPanel, setShowQuestionsPanel,
+  kpiTarget,
 }) {
   const listPaneProps = {
     loading, salarySummary, statusFilter, setStatusFilter,
     monthFilter, setMonthFilter, filteredItems, items,
     availableMonths, statusCounts, selectedUser,
+    kpiTarget, currentMonthCount,
   };
 
   const ganttPanelProps = {
@@ -606,7 +758,9 @@ export default function PersonalView({
           <ListPane {...listPaneProps} onItemClick={setSelectedItem} activeId={selectedItem?.id} />
         </div>
         <div className="overflow-hidden flex flex-col bg-slate-50 relative">
-          {selectedItem && detailProps && !showPlanView ? (
+          {showQuestionsPanel ? (
+            <MyQuestionsPanel selectedUser={selectedUser} />
+          ) : selectedItem && detailProps && !showPlanView ? (
             <>
               <ItemDetail {...detailProps} onBack={null} />
               {showPersonalChart && <ChartModal {...chartProps} onClose={() => setShowPersonalChart(false)} />}
@@ -629,7 +783,9 @@ export default function PersonalView({
           <ListPane {...listPaneProps} onItemClick={item => { setSelectedItem(item); setMobileShowDetail(true); }} activeId={selectedItem?.id} />
         </div>
         <div className={`absolute inset-0 bg-slate-50 transition-transform duration-200 ${mobileShowDetail ? 'translate-x-0' : 'translate-x-full'} relative`}>
-          {showPlanView ? (
+          {showQuestionsPanel ? (
+            <MyQuestionsPanel selectedUser={selectedUser} />
+          ) : showPlanView ? (
             <GanttPanel {...ganttPanelProps} />
           ) : selectedItem && detailProps ? (
             <>

@@ -67,6 +67,38 @@ export default function EvaluationProgress() {
   const [membersKey, setMembersKey]     = useState(0);
   const [availableRanks, setAvailableRanks] = useState([...RANK_OPTIONS]);
 
+  // ── サーベイ未回答バッジ ──
+  const [surveyUnread, setSurveyUnread] = useState(false);
+
+  // ── KPI目標（今月・選択中ユーザー）──
+  const [kpiTarget, setKpiTarget] = useState(null);
+
+  // ── 質問パネル ──
+  const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
+
+  // サーベイ未回答チェック
+  useEffect(() => {
+    if (!selectedUser) return;
+    let cancelled = false;
+    (async () => {
+      const { data: active } = await supabase.from('surveys').select('id').eq('is_active', true).limit(1);
+      if (!active?.length || cancelled) { setSurveyUnread(false); return; }
+      const { data: resp } = await supabase.from('survey_responses')
+        .select('id').eq('survey_id', active[0].id).eq('user_id', selectedUser.id).eq('month', CURRENT_MONTH).limit(1);
+      if (!cancelled) setSurveyUnread(!(resp?.length));
+    })();
+    return () => { cancelled = true; };
+  }, [selectedUser?.id]);
+
+  // KPI目標フェッチ（選択ユーザー・今月）
+  useEffect(() => {
+    if (!selectedUser) return;
+    supabase.from('kpi_targets').select('*')
+      .eq('user_id', selectedUser.id).eq('target_month', CURRENT_MONTH)
+      .maybeSingle()
+      .then(({ data }) => setKpiTarget(data || null));
+  }, [selectedUser?.id]);
+
   // ① users
   useEffect(() => {
     supabase.from('users').select('id, name, rank, progress_name').is('resigned_at', null).order('name')
@@ -113,7 +145,7 @@ export default function EvaluationProgress() {
       supabase.from('evaluation_progress').select('achieved_month, user_name, item_no').eq('status', 'completed').limit(5000),
       supabase.from('evaluation_progress').select('item_no, created_at, user_name').in('status', ['pending', 'in_progress']).limit(5000),
       supabase.from('evaluation_items').select('no, item_name, rank').limit(1000),
-      supabase.from('users').select('id, name, progress_name, rank, department, resigned_at, onboarding_at, trainee_at, partner_at, leader_at, specialist_at, director_at').neq('name', 'テンプレート').limit(200),
+      supabase.from('users').select('id, name, progress_name, rank, department, resigned_at, onboarding_at, trainee_at, partner_at, leader_at, specialist_at, director_at, birth_year').neq('name', 'テンプレート').limit(200),
     ]).then(([c, s, i, u]) => {
       setCompletedProgress(c.data || []);
       setStuckProgress(s.data || []);
@@ -568,6 +600,8 @@ export default function EvaluationProgress() {
         currentMonthCount={currentMonthCount}
         showPersonalChart={showPersonalChart} setShowPersonalChart={setShowPersonalChart}
         plans={plans.filter(p => p.status !== 'achieved')} showPlanView={showPlanView} setShowPlanView={setShowPlanView}
+        surveyUnread={surveyUnread}
+        showQuestionsPanel={showQuestionsPanel} setShowQuestionsPanel={setShowQuestionsPanel}
       />
 
       {view === 'personal' && (
@@ -589,6 +623,8 @@ export default function EvaluationProgress() {
           ngModal={ngModal} setNgModal={setNgModal}
           ngReasonText={ngReasonText} setNgReasonText={setNgReasonText}
           onConfirmNgReason={confirmNgReason}
+          showQuestionsPanel={showQuestionsPanel} setShowQuestionsPanel={setShowQuestionsPanel}
+          kpiTarget={kpiTarget}
         />
       )}
 

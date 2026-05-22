@@ -4,6 +4,8 @@ export default function Header({
   view, setView, users, selectedUser, setSelectedUser,
   currentMonthCount, showPersonalChart, setShowPersonalChart,
   plans, showPlanView, setShowPlanView,
+  surveyUnread,
+  showQuestionsPanel, setShowQuestionsPanel,
 }) {
   return (
     <>
@@ -13,8 +15,13 @@ export default function Header({
           <div className="flex rounded border border-slate-200 overflow-hidden shrink-0">
             {[['personal','個人'],['overall','全体'],['survey','サーベイ'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-2.5 py-1 text-xs transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
-              >{l}</button>
+                className={`relative px-2.5 py-1 text-xs transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                {l}
+                {v === 'survey' && surveyUnread && (
+                  <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                )}
+              </button>
             ))}
           </div>
           <select value={selectedUser?.id ?? ''} onChange={e => { const u = users.find(u => u.id === e.target.value); if (u) setSelectedUser(u); }}
@@ -37,7 +44,7 @@ export default function Header({
                 今月 {currentMonthCount}件クリア 📊
               </button>
               <button
-                onClick={() => { setShowPlanView(prev => !prev); setShowPersonalChart(false); }}
+                onClick={() => { setShowPlanView(prev => !prev); setShowPersonalChart(false); setShowQuestionsPanel(false); }}
                 className={`text-xs font-bold px-2 py-0.5 rounded-full transition-colors ${
                   showPlanView
                     ? 'bg-blue-700 text-white ring-2 ring-blue-300'
@@ -47,6 +54,16 @@ export default function Header({
                 }`}
               >
                 計画 {plans.length}件
+              </button>
+              <button
+                onClick={() => { setShowQuestionsPanel(prev => !prev); setShowPersonalChart(false); setShowPlanView(false); }}
+                className={`text-xs font-bold px-2 py-0.5 rounded-full transition-colors ${
+                  showQuestionsPanel
+                    ? 'bg-violet-700 text-white ring-2 ring-violet-300'
+                    : 'bg-violet-100 text-violet-700 hover:bg-violet-200'
+                }`}
+              >
+                質問に答える
               </button>
             </>
           )}
