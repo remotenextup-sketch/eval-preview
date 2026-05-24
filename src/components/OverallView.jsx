@@ -24,6 +24,18 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
   const [kpiPinInput, setKpiPinInput] = useState('');
   const [kpiPinError, setKpiPinError] = useState('');
 
+  // ── 追加分析データ ──
+  const [stuckDetails, setStuckDetails] = useState([]);
+  const [stuckDetailsLoaded, setStuckDetailsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (stuckDetailsLoaded) return;
+    supabase.from('evaluation_progress')
+      .select('user_name, item_no, updated_at, created_at')
+      .eq('status', 'in_progress')
+      .then(({ data }) => { setStuckDetails(data || []); setStuckDetailsLoaded(true); });
+  }, [stuckDetailsLoaded]);
+
   useEffect(() => {
     if (overallChartMode !== 'promotion' || kpiLoaded) return;
     Promise.all([
@@ -132,6 +144,80 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
     const departments = [...new Set(Object.values(userDeptMap))].sort();
     const data = months.map(month => { const row = { month }; departments.forEach(d => { row[d] = counts[`${d}||${month}`] || 0; }); return row; });
     return { departments, data };
+  })();
+
+  // ── 追加1: 14日以上停滞メンバー ──
+  const stagnatingMembers = (() => {
+    if (!allItemDefs.length || !stuckDetails.length) return [];
+    const itemMap = {};
+    allItemDefs.forEach(d => { if (d.no != null) itemMap[d.no] = d; });
+    return stuckDetails
+      .map(p => {
+        const lastUpdate = new Date(p.updated_at ?? p.created_at).getTime();
+        const days = Math.floor((Date.now() - lastUpdate) / 86400000);
+        return { ...p, days, item: itemMap[p.item_no] };
+      })
+      .filter(p => p.days >= 14 && p.item)
+      .sort((a, b) => b.days - a.days);
+  })();
+
+  // ── 追加2: 失速・停止メンバー検知 ──
+  const velocityIssues = (() => {
+    if (!completedProgress.length) return { list: [], month0: '', month1: '', month2: '' };
+    const [y, m] = CURRENT_MONTH.split('/').map(Number);
+    const toMonth = offset => {
+      const raw = m - offset;
+      const yr = y + Math.floor((raw - 1) / 12);
+      const mo = ((raw - 1 + 12 * 100) % 12) + 1;
+      return `${yr}/${String(mo).padStart(2, '0')}`;
+    };
+    const month0 = toMonth(2);
+    const month1 = toMonth(1);
+    const month2 = CURRENT_MONTH;
+    const userCounts = {};
+    completedProgress.forEach(p => {
+      if (!p.user_name || ![month0, month1, month2].includes(p.achieved_month)) return;
+      if (!userCounts[p.user_name]) userCounts[p.user_name] = { [month0]: 0, [month1]: 0, [month2]: 0 };
+      userCounts[p.user_name][p.achieved_month]++;
+    });
+    const list = Object.entries(userCounts)
+      .map(([userName, counts]) => {
+        const c0 = counts[month0] ?? 0;
+        const c1 = counts[month1] ?? 0;
+        const c2 = counts[month2] ?? 0;
+        const flags = [];
+        if (c0 === 0 && c1 === 0) flags.push('停止');
+        else if (c1 > 0 && c2 <= Math.floor(c1 * 0.5)) flags.push('失速');
+        return { userName, c0, c1, c2, flags };
+      })
+      .filter(u => u.flags.length > 0)
+      .sort((a, b) => (b.flags.includes('停止') ? 1 : 0) - (a.flags.includes('停止') ? 1 : 0));
+    return { list, month0, month1, month2 };
+  })();
+
+  // ── 追加3: ランク別離脱タイミング ──
+  const rankAttritionData = (() => {
+    if (!allUsersData.length) return [];
+    const rankMap = {};
+    allUsersData.filter(u => u.name !== 'テンプレート').forEach(u => {
+      const rank = u.rank || '不明';
+      if (!rankMap[rank]) rankMap[rank] = { resigned: 0, active: 0, days: [] };
+      if (u.resigned_at) {
+        rankMap[rank].resigned++;
+        if (u.onboarding_at) rankMap[rank].days.push(Math.floor((new Date(u.resigned_at) - new Date(u.onboarding_at)) / 86400000));
+      } else {
+        rankMap[rank].active++;
+      }
+    });
+    return Object.entries(rankMap)
+      .map(([rank, { resigned, active, days }]) => {
+        const total = resigned + active;
+        const rate = total > 0 ? Math.round(resigned / total * 100) : 0;
+        const avgDays = days.length ? Math.round(days.reduce((a,b) => a+b,0) / days.length) : 0;
+        return { rank, resigned, active, total, rate, avgDays };
+      })
+      .filter(d => d.total > 0)
+      .sort((a, b) => b.resigned - a.resigned);
   })();
 
   const individualData = overallIndivUser ? (() => {
@@ -635,6 +721,142 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
           ) : <p className="text-slate-400 text-sm text-center py-8">データなし</p>}
         </div>
       </section>}
+
+      {overallChartMode !== 'promotion' && (
+        <section>
+          <h2 className="text-base font-semibold text-slate-700 mb-4">14日以上停滞メンバー</h2>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            {!stuckDetailsLoaded ? (
+              <p className="text-slate-400 text-sm text-center py-8">読み込み中...</p>
+            ) : stagnatingMembers.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-8">停滞中のメンバーはいません</p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {stagnatingMembers.map((p, idx) => (
+                  <div key={idx} className="px-5 py-3.5 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-slate-800">{p.user_name}</span>
+                        <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{p.item?.rank}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{p.item?.item_name}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-bold text-orange-600">{p.days}日</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">フォロー推奨</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {overallChartMode !== 'promotion' && (
+        <section>
+          <h2 className="text-base font-semibold text-slate-700 mb-4">クリアの波・ムラ検知</h2>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            {velocityIssues.list.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-8">失速・停止メンバーはいません</p>
+            ) : (
+              <>
+                <div className="px-5 py-3 border-b border-slate-100 grid grid-cols-5 text-xs font-medium text-slate-500">
+                  <span className="col-span-1">メンバー</span>
+                  <span className="text-right">{velocityIssues.month0?.slice(2)}</span>
+                  <span className="text-right">{velocityIssues.month1?.slice(2)}</span>
+                  <span className="text-right">{velocityIssues.month2?.slice(2)}</span>
+                  <span className="text-right">ステータス</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {velocityIssues.list.map((u, idx) => {
+                    const isStopped = u.flags.includes('停止');
+                    const changeRate = u.c1 > 0 ? Math.round(u.c2 / u.c1 * 100) : null;
+                    return (
+                      <div key={idx} className={`px-5 py-3 grid grid-cols-5 items-center text-sm ${isStopped ? 'bg-red-50' : 'bg-amber-50'}`}>
+                        <span className="col-span-1 font-medium text-slate-800 truncate">{u.userName}</span>
+                        <span className="text-right text-slate-600">{u.c0}件</span>
+                        <span className="text-right text-slate-600">{u.c1}件</span>
+                        <span className="text-right font-medium text-slate-700">{u.c2}件</span>
+                        <div className="text-right">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isStopped ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {isStopped ? '停止' : `失速 ${changeRate}%`}
+                          </span>
+                          {!isStopped && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">要確認</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
+      {overallChartMode !== 'promotion' && rankAttritionData.length > 0 && (
+        <section>
+          <h2 className="text-base font-semibold text-slate-700 mb-4">ランク別離脱タイミング分析</h2>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+            {(() => {
+              const topRank = rankAttritionData.filter(d => d.resigned > 0)[0];
+              const total = rankAttritionData.reduce((s, d) => s + d.resigned, 0);
+              return (
+                <>
+                  {topRank && (
+                    <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                      <p className="text-sm text-slate-700">
+                        <span className="font-semibold text-indigo-600">{topRank.rank}</span> で最も離脱が多く、
+                        退職者 <span className="font-semibold">{topRank.resigned}名</span>（全退職者の {Math.round(topRank.resigned/total*100)}%）。
+                        {topRank.avgDays > 0 && <span> 平均在籍 <span className="font-semibold">{topRank.avgDays}日</span>（約{Math.round(topRank.avgDays/30.44)}ヶ月）で離脱。</span>}
+                      </p>
+                    </div>
+                  )}
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={rankAttritionData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="rank" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <Tooltip formatter={(v, name) => [name === 'resigned' ? `${v}名` : `${v}%`, name === 'resigned' ? '退職人数' : '退職率']} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} formatter={v => v === 'resigned' ? '退職人数' : '退職率(%)'} />
+                      <Bar dataKey="resigned" name="resigned" fill="#f87171" radius={[4,4,0,0]}>
+                        {rankAttritionData.map((_, i) => <Cell key={i} fill={RANK_CHART_COLORS[i % RANK_CHART_COLORS.length]} />)}
+                      </Bar>
+                      <Bar dataKey="rate" name="rate" fill="#fbbf24" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead><tr className="border-b border-slate-200 text-left text-slate-500">
+                        <th className="pb-2 pr-3">ランク</th>
+                        <th className="pb-2 pr-3 text-right">退職</th>
+                        <th className="pb-2 pr-3 text-right">在籍中</th>
+                        <th className="pb-2 pr-3 text-right">退職率</th>
+                        <th className="pb-2 text-right">平均在籍</th>
+                      </tr></thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {rankAttritionData.map(d => (
+                          <tr key={d.rank}>
+                            <td className="py-1.5 pr-3 font-medium text-slate-700">
+                              <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{d.rank}</span>
+                            </td>
+                            <td className="py-1.5 pr-3 text-right text-red-600 font-medium">{d.resigned}名</td>
+                            <td className="py-1.5 pr-3 text-right text-slate-600">{d.active}名</td>
+                            <td className="py-1.5 pr-3 text-right">
+                              <span className={`font-bold ${d.rate >= 50 ? 'text-red-600' : d.rate >= 30 ? 'text-amber-600' : 'text-slate-600'}`}>{d.rate}%</span>
+                            </td>
+                            <td className="py-1.5 text-right text-slate-500">{d.avgDays > 0 ? `${d.avgDays}日 (${Math.round(d.avgDays/30.44)}ヶ月)` : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
