@@ -722,8 +722,7 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
         </div>
       </section>}
 
-      {overallChartMode !== 'promotion' && (
-        <section>
+      <section>
           <h2 className="text-base font-semibold text-slate-700 mb-4">14日以上停滞メンバー</h2>
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             {!stuckDetailsLoaded ? (
@@ -750,11 +749,9 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
               </div>
             )}
           </div>
-        </section>
-      )}
+      </section>
 
-      {overallChartMode !== 'promotion' && (
-        <section>
+      <section>
           <h2 className="text-base font-semibold text-slate-700 mb-4">クリアの波・ムラ検知</h2>
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             {velocityIssues.list.length === 0 ? (
@@ -791,14 +788,14 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
               </>
             )}
           </div>
-        </section>
-      )}
+      </section>
 
-      {overallChartMode !== 'promotion' && rankAttritionData.length > 0 && (
-        <section>
+      <section>
           <h2 className="text-base font-semibold text-slate-700 mb-4">ランク別離脱タイミング分析</h2>
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
-            {(() => {
+            {allUsersData.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-8">データなし</p>
+            ) : (() => {
               const topRank = rankAttritionData.filter(d => d.resigned > 0)[0];
               const total = rankAttritionData.reduce((s, d) => s + d.resigned, 0);
               return (
@@ -855,8 +852,7 @@ export default function OverallView({ overallLoading, completedProgress, stuckPr
               );
             })()}
           </div>
-        </section>
-      )}
+      </section>
     </div>
   );
 }
