@@ -209,15 +209,18 @@ function QuestionAnswerCard({ q, onAnswer }) {
   const isAnswered = q.status === 'answered';
 
   return (
-    <div className={`rounded-xl border p-3 ${isAnswered ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-yellow-50 border-yellow-200'}`}>
+    <div className={`rounded-xl border p-3 ${isAnswered ? 'bg-slate-100 border-slate-200' : 'bg-yellow-50 border-yellow-200'}`}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="flex items-center gap-1.5 flex-wrap">
           {q.evaluation_items?.item_name && (
             <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{q.evaluation_items.item_name}</span>
           )}
+          {q.user_name && (
+            <span className="text-xs text-slate-600 font-medium">{q.user_name}</span>
+          )}
           <span className="text-xs text-slate-400">{new Date(q.created_at).toLocaleDateString('ja-JP')}</span>
         </div>
-        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isAnswered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isAnswered ? 'bg-slate-300 text-slate-600' : 'bg-yellow-100 text-yellow-700'}`}>
           {isAnswered ? '回答済' : '未回答'}
         </span>
       </div>
@@ -255,20 +258,19 @@ function QuestionAnswerCard({ q, onAnswer }) {
   );
 }
 
-function MyQuestionsPanel({ selectedUser }) {
+function MyQuestionsPanel() {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const userName = selectedUser?.progress_name ?? selectedUser?.name;
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [rankFilter, setRankFilter] = useState('all');
 
   useEffect(() => {
-    if (!userName) return;
     setLoading(true);
     supabase.from('item_questions')
       .select('*, evaluation_items(item_name, rank)')
-      .eq('user_name', userName)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setQuestions(data || []); setLoading(false); });
-  }, [userName]);
+  }, []);
 
   const handleAnswer = async (qId, answer, answeredBy) => {
     const { error } = await supabase.from('item_questions')
@@ -276,38 +278,57 @@ function MyQuestionsPanel({ selectedUser }) {
     if (!error) setQuestions(prev => prev.map(q => q.id === qId ? { ...q, answer, answered_by: answeredBy, status: 'answered' } : q));
   };
 
-  const unanswered = questions.filter(q => q.status !== 'answered');
-  const answered = questions.filter(q => q.status === 'answered');
+  const ranks = Array.from(new Set(questions.map(q => q.evaluation_items?.rank).filter(Boolean))).sort();
+
+  const filtered = questions.filter(q => {
+    if (statusFilter === 'open' && q.status === 'answered') return false;
+    if (statusFilter === 'answered' && q.status !== 'answered') return false;
+    if (rankFilter !== 'all' && q.evaluation_items?.rank !== rankFilter) return false;
+    return true;
+  });
+
+  const unansweredCount = questions.filter(q => q.status !== 'answered').length;
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-slate-700">{selectedUser?.name} の質問一覧</h2>
-        <p className="text-xs text-slate-400 mt-0.5">未回答: {unanswered.length}件 / 全: {questions.length}件</p>
+        <h2 className="text-base font-semibold text-slate-700">質問一覧</h2>
+        <p className="text-xs text-slate-400 mt-0.5">未回答: {unansweredCount}件 / 全: {questions.length}件</p>
       </div>
+
+      <div className="space-y-2">
+        <div className="flex gap-1.5 flex-wrap">
+          {[{ value: 'all', label: '全て' }, { value: 'open', label: '未回答のみ' }, { value: 'answered', label: '回答済みのみ' }].map(({ value, label }) => (
+            <button key={value} onClick={() => setStatusFilter(value)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${statusFilter === value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {ranks.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={() => setRankFilter('all')}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${rankFilter === 'all' ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300'}`}>
+              全ランク
+            </button>
+            {ranks.map(r => (
+              <button key={r} onClick={() => setRankFilter(r)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${rankFilter === r ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300'}`}>
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <p className="text-sm text-slate-400 text-center py-8">読み込み中...</p>
-      ) : questions.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <p className="text-sm text-slate-400 text-center py-8">質問がありません</p>
       ) : (
-        <>
-          {unanswered.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-yellow-700 mb-2">未回答 ({unanswered.length}件)</p>
-              <div className="space-y-2">
-                {unanswered.map(q => <QuestionAnswerCard key={q.id} q={q} onAnswer={handleAnswer} />)}
-              </div>
-            </div>
-          )}
-          {answered.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold text-slate-400 mb-2">回答済 ({answered.length}件)</p>
-              <div className="space-y-2">
-                {answered.map(q => <QuestionAnswerCard key={q.id} q={q} onAnswer={handleAnswer} />)}
-              </div>
-            </div>
-          )}
-        </>
+        <div className="space-y-2">
+          {filtered.map(q => <QuestionAnswerCard key={q.id} q={q} onAnswer={handleAnswer} />)}
+        </div>
       )}
     </div>
   );
