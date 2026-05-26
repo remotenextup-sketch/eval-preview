@@ -46,6 +46,10 @@ export default function SalaryView({ users }) {
   const [salaryLoading, setSalaryLoading]   = useState(false);
   const [toggling, setToggling]             = useState(null);
 
+  // ── ボーナス編集（個人ビュー） ──
+  const [bonusEditing, setBonusEditing]     = useState({});
+  const [savingBonusMonth, setSavingBonusMonth] = useState(null);
+
   // ── 管理者ビュー ──
   const [adminTab, setAdminTab]             = useState('list');
   const [allSalaryData, setAllSalaryData]   = useState([]);
@@ -57,6 +61,10 @@ export default function SalaryView({ users }) {
   const [bulkSaving, setBulkSaving]         = useState(false);
   const [salaryView, setSalaryView]         = useState(() => readAuth()?.type === 'admin' ? 'admin' : 'personal');
   const [graphFiscalYear, setGraphFiscalYear] = useState('all');
+
+  // ── ボーナス編集（管理者ビュー） ──
+  const [adminBonusEdit, setAdminBonusEdit] = useState({});
+  const [savingAdminBonus, setSavingAdminBonus] = useState(null);
 
   const [addUsers, setAddUsers]             = useState([]);
   const [addAmount, setAddAmount]           = useState('');
@@ -89,6 +97,7 @@ export default function SalaryView({ users }) {
   useEffect(() => {
     if (!salaryUser) return;
     setSalaryLoading(true);
+    setBonusEditing({});
     const pName = salaryUser.progress_name ?? salaryUser.name;
     Promise.all([
       supabase.from('hourly_rate_history').select('*').eq('user_id', salaryUser.id).order('month'),
@@ -107,7 +116,7 @@ export default function SalaryView({ users }) {
   const loadAdminData = async () => {
     setAdminLoading(true);
     const { data } = await supabase.from('hourly_rate_history')
-      .select('id, user_id, month, base_rate, item_bonus, total_rate, confirmed, note, users(name, rank, birth_year)')
+      .select('id, user_id, month, base_rate, item_bonus, bonus, bonus_note, total_rate, confirmed, note, users(name, rank, birth_year)')
       .order('month').limit(5000);
     setAllSalaryData(data || []);
     setAdminLoading(false);
@@ -116,7 +125,6 @@ export default function SalaryView({ users }) {
   // ── PIN認証ロジック ──
   const handlePinAuth = async () => {
     setPinError('');
-    // マスターPIN → 管理者認証
     if (pinDigits === MASTER_PIN) {
       const auth = { type: 'admin' };
       saveAuth(auth);
@@ -130,7 +138,6 @@ export default function SalaryView({ users }) {
     const { data, error } = await supabase.from('users').select('pin_code').eq('id', pinUserId).single();
     if (error || !data) { setPinError('エラーが発生しました'); setPinLoading(false); return; }
     if (!data.pin_code) {
-      // PIN未設定 → 設定モードへ
       setPinMode('set');
       setPinDigits('');
       setPinConfirm('');
@@ -210,6 +217,49 @@ export default function SalaryView({ users }) {
     setToggling(null);
   };
 
+  // ── ボーナス保存（個人ビュー） ──
+  const saveBonus = async (month) => {
+    if (!salaryUser || savingBonusMonth) return;
+    const hist = salaryHistory.find(h => h.month === month);
+    const edit = bonusEditing[month] ?? {};
+    const bonus = edit.bonus !== undefined ? (parseInt(edit.bonus) || 0) : (hist?.bonus ?? 0);
+    const bonus_note = edit.bonus_note !== undefined ? (edit.bonus_note.trim() || null) : (hist?.bonus_note ?? null);
+
+    // 変化なしはスキップ
+    if (hist && bonus === (hist.bonus ?? 0) && bonus_note === (hist.bonus_note ?? null)) return;
+
+    setSavingBonusMonth(month);
+    if (hist) {
+      const { data } = await supabase.from('hourly_rate_history')
+        .update({ bonus, bonus_note })
+        .eq('id', hist.id)
+        .select().single();
+      if (data) setSalaryHistory(prev => prev.map(h => h.id === hist.id ? data : h));
+    } else {
+      const { base_rate, item_bonus } = calcMonth(month, salaryUser);
+      const { data } = await supabase.from('hourly_rate_history')
+        .insert({ user_id: salaryUser.id, month, base_rate, item_bonus, bonus, bonus_note, confirmed: false })
+        .select().single();
+      if (data) setSalaryHistory(prev => [...prev, data].sort((a, b) => a.month.localeCompare(b.month)));
+    }
+    setSavingBonusMonth(null);
+  };
+
+  // ── ボーナス保存（管理者ビュー） ──
+  const saveAdminBonus = async (row) => {
+    const edit = adminBonusEdit[row.id];
+    if (!edit || savingAdminBonus === row.id) return;
+    setSavingAdminBonus(row.id);
+    const bonus = edit.bonus !== undefined ? (parseInt(edit.bonus) || 0) : (row.bonus ?? 0);
+    const bonus_note = edit.bonus_note !== undefined ? (edit.bonus_note.trim() || null) : (row.bonus_note ?? null);
+    const { data } = await supabase.from('hourly_rate_history')
+      .update({ bonus, bonus_note })
+      .eq('id', row.id)
+      .select('id, bonus, bonus_note, total_rate').single();
+    if (data) setAllSalaryData(prev => prev.map(d => d.id === row.id ? { ...d, ...data } : d));
+    setSavingAdminBonus(null);
+  };
+
   const handleBulkUpdate = async () => {
     if (!bulkUsers.length || !bulkRate) return;
     setBulkSaving(true);
@@ -258,11 +308,12 @@ export default function SalaryView({ users }) {
 
   const exportCsv = () => {
     const rows = [
-      ['名前','月','基本時給','ボーナス','合計'],
+      ['名前','月','基本時給','項目ボーナス','ボーナス','合計'],
       ...allSalaryData.filter(d => d.month === adminMonth).map(d => [
         d.users?.name ?? d.user_id, d.month,
         d.base_rate, d.item_bonus ?? 0,
-        d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0)),
+        d.bonus ?? 0,
+        d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0) + (d.bonus ?? 0)),
       ])
     ];
     const blob = new Blob(['﻿' + rows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -286,7 +337,7 @@ export default function SalaryView({ users }) {
     userLatestInPeriod.forEach(d => {
       const rank = d.users?.rank;
       if (!rank) return;
-      const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
+      const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0) + (d.bonus ?? 0));
       if (!rankGroups[rank]) rankGroups[rank] = [];
       rankGroups[rank].push(total);
     });
@@ -304,7 +355,7 @@ export default function SalaryView({ users }) {
     const groups = { '20代': [], '30代': [], '40代': [], '50代以上': [], '不明': [] };
     userLatestInPeriod.forEach(d => {
       const birthYear = d.users?.birth_year;
-      const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0));
+      const total = d.total_rate ?? (d.base_rate + (d.item_bonus ?? 0) + (d.bonus ?? 0));
       if (!birthYear) { groups['不明'].push(total); return; }
       const age = currentYear - birthYear;
       if (age >= 50) groups['50代以上'].push(total);
@@ -327,7 +378,9 @@ export default function SalaryView({ users }) {
     const hist = salaryHistory.find(h => h.month === month);
     return {
       month,
-      total: hist ? (hist.total_rate ?? hist.base_rate + (hist.item_bonus ?? 0)) : calcMonth(month, salaryUser).total,
+      total: hist
+        ? (hist.total_rate ?? hist.base_rate + (hist.item_bonus ?? 0) + (hist.bonus ?? 0))
+        : calcMonth(month, salaryUser).total,
       confirmed: hist?.confirmed ?? false,
     };
   });
@@ -342,7 +395,6 @@ export default function SalaryView({ users }) {
       {!pinAuth && (
         <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
-            {/* ヘッダー */}
             <div>
               <h2 className="text-base font-bold text-slate-800">
                 {pinMode === 'set' ? 'PINを設定する' : '時給を確認する'}
@@ -354,7 +406,6 @@ export default function SalaryView({ users }) {
               </p>
             </div>
 
-            {/* 名前選択（authモードのみ） */}
             {pinMode === 'auth' && (
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">名前</label>
@@ -369,7 +420,6 @@ export default function SalaryView({ users }) {
               </div>
             )}
 
-            {/* PIN入力 */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">
                 {pinMode === 'set' ? '新しいPIN（4桁数字）' : 'PIN（4桁）'}
@@ -390,7 +440,6 @@ export default function SalaryView({ users }) {
               )}
             </div>
 
-            {/* 確認入力（setモードのみ） */}
             {pinMode === 'set' && (
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">PINの確認</label>
@@ -406,12 +455,10 @@ export default function SalaryView({ users }) {
               </div>
             )}
 
-            {/* エラー */}
             {pinError && (
               <p className="text-xs text-red-500 text-center bg-red-50 rounded-lg py-2 px-3">{pinError}</p>
             )}
 
-            {/* ボタン */}
             <button
               onClick={pinMode === 'auth' ? handlePinAuth : handlePinSet}
               className={`w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium ${
@@ -427,7 +474,6 @@ export default function SalaryView({ users }) {
                   : 'PINを設定して認証'}
             </button>
 
-            {/* setモード → authモードに戻る */}
             {pinMode === 'set' && (
               <button
                 onClick={() => { setPinMode('auth'); setPinDigits(''); setPinConfirm(''); setPinError(''); }}
@@ -508,7 +554,10 @@ export default function SalaryView({ users }) {
                         const calc = calcMonth(month, salaryUser);
                         const base = hist?.base_rate ?? calc.base_rate;
                         const bonusVal = hist?.item_bonus ?? calc.item_bonus;
-                        const total = hist?.total_rate ?? (base + bonusVal);
+                        const bonusExtra = hist?.bonus ?? 0;
+                        const total = hist
+                          ? (hist.total_rate ?? (base + bonusVal + bonusExtra))
+                          : calc.total;
                         const isConfirmed = hist?.confirmed ?? false;
                         const isCurrent = month === CURRENT_MONTH;
                         return (
@@ -530,10 +579,40 @@ export default function SalaryView({ users }) {
                                 {toggling === month ? '...' : isConfirmed ? '✓ 確定済み' : '− 未確定'}
                               </button>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-500">
+                            <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap mb-2">
                               <span>{base.toLocaleString()}円</span>
-                              {bonusVal > 0 && <span className="text-green-600">+{bonusVal}円</span>}
+                              {bonusVal > 0 && <span className="text-green-600">+{bonusVal.toLocaleString()}円</span>}
+                              {bonusExtra > 0 && <span className="text-purple-600">ボーナス+{bonusExtra.toLocaleString()}円</span>}
                               <span className="font-semibold text-slate-700 text-sm">{total.toLocaleString()}円</span>
+                            </div>
+                            {/* ボーナス入力 */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400 w-12 shrink-0">ボーナス</span>
+                                <input
+                                  type="number"
+                                  value={bonusEditing[month]?.bonus ?? (bonusExtra || '')}
+                                  onChange={e => setBonusEditing(prev => ({ ...prev, [month]: { ...prev[month], bonus: e.target.value } }))}
+                                  onBlur={() => saveBonus(month)}
+                                  onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                                  placeholder="0"
+                                  className="w-24 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                />
+                                <span className="text-xs text-slate-400">円</span>
+                                {savingBonusMonth === month && <span className="text-xs text-slate-300">保存中</span>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400 w-12 shrink-0">備考</span>
+                                <input
+                                  type="text"
+                                  value={bonusEditing[month]?.bonus_note ?? (hist?.bonus_note ?? '')}
+                                  onChange={e => setBonusEditing(prev => ({ ...prev, [month]: { ...prev[month], bonus_note: e.target.value } }))}
+                                  onBlur={() => saveBonus(month)}
+                                  onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                                  placeholder="備考"
+                                  className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                />
+                              </div>
                             </div>
                           </div>
                         );
@@ -548,6 +627,8 @@ export default function SalaryView({ users }) {
                   const { base, bonus } = getRankInfo(salaryUser.rank ?? '');
                   const curCalc = calcMonth(CURRENT_MONTH, salaryUser);
                   const curCount = completedByMonth[CURRENT_MONTH] ?? 0;
+                  const curHist = salaryHistory.find(h => h.month === CURRENT_MONTH);
+                  const curBonus = curHist?.bonus ?? 0;
                   return (
                     <>
                       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
@@ -556,11 +637,12 @@ export default function SalaryView({ users }) {
                           {[
                             { label: '基本時給', value: `${base.toLocaleString()}円` },
                             { label: '今月クリア', value: `${curCount}件`, hi: curCount > 0 },
-                            { label: 'ボーナス', value: `${(bonus * curCount).toLocaleString()}円`, hi: bonus * curCount > 0 },
-                            { label: '推定時給', value: `${curCalc.total.toLocaleString()}円`, bold: true },
+                            { label: '項目ボーナス', value: `${(bonus * curCount).toLocaleString()}円`, hi: bonus * curCount > 0 },
+                            { label: 'ボーナス', value: `${curBonus.toLocaleString()}円`, hi: curBonus > 0, purple: true },
+                            { label: '推定時給', value: `${(curCalc.total + curBonus).toLocaleString()}円`, bold: true },
                           ].map(s => (
-                            <div key={s.label} className={`rounded-xl px-4 py-3 text-center border flex-1 min-w-[80px] ${s.bold ? 'bg-indigo-50 border-indigo-200' : s.hi ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-100'}`}>
-                              <p className={`text-lg font-bold ${s.bold ? 'text-indigo-700' : 'text-slate-800'}`}>{s.value}</p>
+                            <div key={s.label} className={`rounded-xl px-4 py-3 text-center border flex-1 min-w-[80px] ${s.bold ? 'bg-indigo-50 border-indigo-200' : s.purple ? 'bg-purple-50 border-purple-100' : s.hi ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-100'}`}>
+                              <p className={`text-lg font-bold ${s.bold ? 'text-indigo-700' : s.purple ? 'text-purple-700' : 'text-slate-800'}`}>{s.value}</p>
                               <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
                             </div>
                           ))}
@@ -631,27 +713,55 @@ export default function SalaryView({ users }) {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-slate-200 bg-slate-50">
-                              {['名前','ランク','基本時給','ボーナス','合計','確定','メモ'].map(h => (
-                                <th key={h} className={`py-2.5 px-4 text-slate-500 font-medium ${['基本時給','ボーナス','合計'].includes(h) ? 'text-right' : h === '確定' ? 'text-center' : 'text-left'}`}>{h}</th>
+                              {['名前','ランク','基本時給','項目B','ボーナス','合計','確定','メモ'].map(h => (
+                                <th key={h} className={`py-2.5 px-3 text-slate-500 font-medium ${['基本時給','項目B','合計'].includes(h) ? 'text-right' : h === '確定' ? 'text-center' : 'text-left'}`}>{h}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {adminMonthData.length === 0 ? (
-                              <tr><td colSpan={7} className="text-center py-8 text-slate-400">この月のデータがありません</td></tr>
+                              <tr><td colSpan={8} className="text-center py-8 text-slate-400">この月のデータがありません</td></tr>
                             ) : adminMonthData.map(d => (
                               <tr key={d.id} className={`border-b border-slate-100 ${!d.confirmed ? 'bg-yellow-50' : ''}`}>
-                                <td className="py-2.5 px-4 font-medium text-slate-700">{d.users?.name ?? '−'}</td>
-                                <td className="py-2.5 px-4 text-slate-500">{d.users?.rank ?? '−'}</td>
-                                <td className="py-2.5 px-4 text-right">{(d.base_rate ?? 0).toLocaleString()}円</td>
-                                <td className="py-2.5 px-4 text-right text-green-600">+{d.item_bonus ?? 0}円</td>
-                                <td className="py-2.5 px-4 text-right font-semibold">{(d.total_rate ?? (d.base_rate ?? 0) + (d.item_bonus ?? 0)).toLocaleString()}円</td>
-                                <td className="py-2.5 px-4 text-center">
+                                <td className="py-2 px-3 font-medium text-slate-700">{d.users?.name ?? '−'}</td>
+                                <td className="py-2 px-3 text-slate-500">{d.users?.rank ?? '−'}</td>
+                                <td className="py-2 px-3 text-right">{(d.base_rate ?? 0).toLocaleString()}円</td>
+                                <td className="py-2 px-3 text-right text-green-600">+{d.item_bonus ?? 0}円</td>
+                                <td className="py-2 px-3">
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        value={adminBonusEdit[d.id]?.bonus ?? (d.bonus || '')}
+                                        onChange={e => setAdminBonusEdit(prev => ({ ...prev, [d.id]: { ...prev[d.id], bonus: e.target.value } }))}
+                                        onBlur={() => saveAdminBonus(d)}
+                                        onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                                        placeholder="0"
+                                        className="w-20 text-xs border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                      />
+                                      <span className="text-slate-400">円</span>
+                                      {savingAdminBonus === d.id && <span className="text-slate-300 text-xs">...</span>}
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={adminBonusEdit[d.id]?.bonus_note ?? (d.bonus_note ?? '')}
+                                      onChange={e => setAdminBonusEdit(prev => ({ ...prev, [d.id]: { ...prev[d.id], bonus_note: e.target.value } }))}
+                                      onBlur={() => saveAdminBonus(d)}
+                                      onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                                      placeholder="備考"
+                                      className="w-28 text-xs border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-right font-semibold">
+                                  {(d.total_rate ?? (d.base_rate ?? 0) + (d.item_bonus ?? 0) + (d.bonus ?? 0)).toLocaleString()}円
+                                </td>
+                                <td className="py-2 px-3 text-center">
                                   {d.confirmed
                                     ? <span className="text-green-600 font-medium">確定</span>
                                     : <span className="text-amber-500 font-medium">未確定</span>}
                                 </td>
-                                <td className="py-2.5 px-4 text-slate-400">{d.note ?? ''}</td>
+                                <td className="py-2 px-3 text-slate-400">{d.note ?? ''}</td>
                               </tr>
                             ))}
                           </tbody>
