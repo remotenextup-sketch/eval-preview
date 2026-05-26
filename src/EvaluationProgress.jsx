@@ -80,6 +80,9 @@ export default function EvaluationProgress() {
   const [showFloating, setShowFloating]   = useState(false);
   const floatingRef                        = useRef(null);
 
+  // ── 付箋ページからの項目選択連携 ──
+  const [pendingItemNo, setPendingItemNo] = useState(null);
+
   // サーベイ未回答チェック
   useEffect(() => {
     if (!selectedUser) return;
@@ -253,6 +256,38 @@ export default function EvaluationProgress() {
         setPlansLoading(false);
       });
   }, [selectedUser, view]);
+
+  // 付箋ページからの storage イベントで項目選択
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== 'stickySelectItem') return;
+      try {
+        const sel = JSON.parse(e.newValue);
+        if (!sel) return;
+        setView('personal');
+        setStatusFilter('all');
+        setPendingItemNo(sel.itemNo);
+        if (sel.userId && sel.userId !== selectedUser?.id) {
+          const u = users.find(u => u.id === sel.userId);
+          if (u) setSelectedUser(u);
+        }
+      } catch {}
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [users, selectedUser?.id]);
+
+  // pendingItemNo が立ったとき items がロード済みなら即選択
+  useEffect(() => {
+    if (pendingItemNo == null || !items.length) return;
+    const item = items.find(i => i.item_no === pendingItemNo);
+    if (item) {
+      setSelectedItem(item);
+      setMobileShowDetail(true);
+      setPendingItemNo(null);
+      localStorage.removeItem('stickySelectItem');
+    }
+  }, [items, pendingItemNo]);
 
   // フローティング: クリック外側で閉じる / Escape
   useEffect(() => {

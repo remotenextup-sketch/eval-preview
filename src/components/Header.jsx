@@ -70,6 +70,13 @@ export default function Header({
           {view === 'admin' && selectedUser && (
             <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">投稿者: {selectedUser.name}</span>
           )}
+          <button
+            onClick={() => window.open('/sticky', 'sticky', 'width=320,height=600,resizable=yes')}
+            className="text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors shrink-0 ml-auto"
+            title="付箋を別ウィンドウで開く"
+          >
+            📌 付箋
+          </button>
         </div>
       </header>
     </>
