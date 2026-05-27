@@ -160,6 +160,11 @@ export default function Sticky() {
         </button>
       </div>
 
+      {/* 説明テキスト */}
+      <p className="px-3 pt-2 pb-0 text-[10px] text-yellow-600 leading-relaxed">
+        個人タブでステータスを「取り組み中」にした項目がここに表示されます
+      </p>
+
       {/* 件数バッジ */}
       {!loading && !error && (
         <div className="px-3 py-1.5 flex items-center gap-1.5">

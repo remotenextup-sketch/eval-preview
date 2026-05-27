@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 
 import { supabase } from './components/supabaseClient';
@@ -82,9 +82,6 @@ export default function EvaluationProgress() {
   // ── 質問パネル ──
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
 
-  // ── フローティング取り組み中 ──
-  const [showFloating, setShowFloating]   = useState(false);
-  const floatingRef                        = useRef(null);
 
   // ── 付箋ページからの項目選択連携 ──
   const [pendingItemNo, setPendingItemNo] = useState(null);
@@ -307,20 +304,7 @@ export default function EvaluationProgress() {
     }
   }, [items, pendingItemNo]);
 
-  // フローティング: クリック外側で閉じる / Escape
-  useEffect(() => {
-    if (!showFloating) return;
-    const onMouse = (e) => {
-      if (floatingRef.current && !floatingRef.current.contains(e.target)) setShowFloating(false);
-    };
-    const onKey = (e) => { if (e.key === 'Escape') setShowFloating(false); };
-    document.addEventListener('mousedown', onMouse);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onMouse); document.removeEventListener('keydown', onKey); };
-  }, [showFloating]);
-
   // ── 個人ビュー集計 ──
-  const inProgressItems = items.filter(i => i.status === 'in_progress');
   const currentMonthCount = items.filter(i => i.status === 'completed' && i.achieved_month === CURRENT_MONTH).length;
   const monthlyCounts = items
     .filter(i => i.status === 'completed' && /^\d{4}\/\d{2}$/.test(i.achieved_month ?? ''))
@@ -661,13 +645,6 @@ export default function EvaluationProgress() {
     }
   };
 
-  const handleFloatingItemClick = (item) => {
-    setView('personal');
-    setStatusFilter('all');
-    setSelectedItem(item);
-    setMobileShowDetail(true);
-    setShowFloating(false);
-  };
 
   const detailProps = selectedItem ? {
     item: selectedItem, onStatusChange: updateStatus, onMemoChange: updateMemo,
@@ -802,45 +779,6 @@ export default function EvaluationProgress() {
         <BugBoardModal onClose={() => { setShowBugBoard(false); refreshBugCount(); }} onCountChange={refreshBugCount} />
       )}
 
-      {/* ── フローティング取り組み中ボタン ── */}
-      <div ref={floatingRef} className="fixed bottom-6 right-6 z-40">
-        <button
-          onClick={() => setShowFloating(prev => !prev)}
-          className="relative w-12 h-12 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center text-xl hover:bg-indigo-700 active:scale-95 transition-all"
-          title="取り組み中の項目"
-        >
-          📌
-          {inProgressItems.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold leading-none">
-              {inProgressItems.length}
-            </span>
-          )}
-        </button>
-        {showFloating && (
-          <div className="absolute bottom-14 right-0 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 bg-indigo-50">
-              <p className="text-xs font-semibold text-indigo-700">
-                取り組み中{inProgressItems.length > 0 ? ` (${inProgressItems.length}件)` : ''}
-              </p>
-              {selectedUser && <p className="text-xs text-slate-500 mt-0.5">{selectedUser.name}</p>}
-            </div>
-            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-              {inProgressItems.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-6">取り組み中の項目はありません</p>
-              ) : inProgressItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => handleFloatingItemClick(item)}
-                  className="w-full px-4 py-3 text-left hover:bg-indigo-50 transition-colors"
-                >
-                  <p className="text-xs font-medium text-slate-700 leading-snug">{item.item_name}</p>
-                  {item.rank && <p className="text-xs text-slate-400 mt-0.5">{item.rank}</p>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
