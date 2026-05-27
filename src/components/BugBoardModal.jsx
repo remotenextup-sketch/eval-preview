@@ -288,32 +288,43 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                       </div>
                       <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{selectedBug.description}</p>
 
-                      {/* 管理者コントロール */}
+                      {/* ステータス変更（常時表示） */}
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <p className="text-[10px] font-semibold text-slate-500 mb-2">ステータスを変更</p>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => updateStatus(selectedBug.id, 'in_progress')}
+                            disabled={selectedBug.status === 'in_progress'}
+                            className="flex-1 text-xs px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-yellow-400 hover:bg-yellow-500 text-yellow-900 disabled:bg-yellow-200">
+                            対応中にする
+                          </button>
+                          <button
+                            onClick={() => updateStatus(selectedBug.id, 'resolved')}
+                            disabled={selectedBug.status === 'resolved'}
+                            className="flex-1 text-xs px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-500 hover:bg-emerald-600 text-white disabled:bg-emerald-200">
+                            解決済みにする
+                          </button>
+                          <button
+                            onClick={() => updateStatus(selectedBug.id, 'open')}
+                            disabled={selectedBug.status === 'open'}
+                            className="flex-1 text-xs px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-slate-200 hover:bg-slate-300 text-slate-700 disabled:bg-slate-100">
+                            未対応に戻す
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 管理者：優先度変更 */}
                       {isAdmin && (
-                        <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
-                          <div>
-                            <p className="text-[10px] font-semibold text-slate-500 mb-1.5">ステータス変更</p>
-                            <div className="flex gap-1.5 flex-wrap">
-                              {[['open','未対応'],['in_progress','対応中'],['resolved','解決済み']].map(([v, l]) => (
-                                <button key={v}
-                                  onClick={() => updateStatus(selectedBug.id, v)}
-                                  className={`text-xs px-2 py-1 rounded-lg border transition-colors ${selectedBug.status === v ? 'bg-indigo-600 border-indigo-600 text-white font-semibold' : 'border-slate-300 text-slate-600 hover:bg-indigo-50 hover:border-indigo-300'}`}>
-                                  {l}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-semibold text-slate-500 mb-1.5">優先度変更</p>
-                            <div className="flex gap-1.5 flex-wrap">
-                              {[['low','低優先'],['medium','中優先'],['high','高優先']].map(([v, l]) => (
-                                <button key={v}
-                                  onClick={() => updatePriority(selectedBug.id, v)}
-                                  className={`text-xs px-2 py-1 rounded-lg border transition-colors ${selectedBug.priority === v ? 'bg-indigo-600 border-indigo-600 text-white font-semibold' : 'border-slate-300 text-slate-600 hover:bg-indigo-50 hover:border-indigo-300'}`}>
-                                  {l}
-                                </button>
-                              ))}
-                            </div>
+                        <div className="mt-2 pt-2 border-t border-slate-200">
+                          <p className="text-[10px] font-semibold text-slate-500 mb-1.5">優先度変更</p>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {[['low','低優先'],['medium','中優先'],['high','高優先']].map(([v, l]) => (
+                              <button key={v}
+                                onClick={() => updatePriority(selectedBug.id, v)}
+                                className={`text-xs px-2 py-1 rounded-lg border transition-colors ${selectedBug.priority === v ? 'bg-indigo-600 border-indigo-600 text-white font-semibold' : 'border-slate-300 text-slate-600 hover:bg-indigo-50 hover:border-indigo-300'}`}>
+                                {l}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       )}
