@@ -297,6 +297,7 @@ function AdminLeftPane({
   // ドラッグ中のアイテムID
   const [activeDragId, setActiveDragId] = useState(null);
   const [jumpRankIdx, setJumpRankIdx] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const rankInputRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -312,10 +313,10 @@ function AdminLeftPane({
   };
 
   const jumpToNextRank = () => {
-    if (rankGroups.length === 0) return;
-    const nextIdx = (jumpRankIdx + 1) % rankGroups.length;
+    if (filteredRankGroups.length === 0) return;
+    const nextIdx = (jumpRankIdx + 1) % filteredRankGroups.length;
     setJumpRankIdx(nextIdx);
-    jumpToRank(rankGroups[nextIdx].rank);
+    jumpToRank(filteredRankGroups[nextIdx].rank);
   };
 
   // availableRanks 変化時に rankOrder を同期
@@ -343,6 +344,17 @@ function AdminLeftPane({
   const rankGroups = rankOrder
     .map(rank => ({ rank, items: localRankItems[rank] || [] }))
     .filter(g => g.items.length > 0);
+
+  const filteredRankGroups = searchQuery.trim()
+    ? rankGroups
+        .map(g => ({
+          ...g,
+          items: g.items.filter(item =>
+            item.item_name?.toLowerCase().includes(searchQuery.toLowerCase())
+          ),
+        }))
+        .filter(g => g.items.length > 0)
+    : rankGroups;
 
   // ランクグループの ↑/↓ 移動
   const moveRankGroup = (rank, direction) => {
@@ -428,15 +440,30 @@ function AdminLeftPane({
           onClick={() => onSelectAdminItem('new')}
           className={`w-full text-sm py-2 rounded-xl font-medium transition-colors ${selectedAdminItem === 'new' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'}`}
         >＋ 新規項目を追加</button>
-        {rankGroups.length > 0 && (
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="項目名で検索..."
+            className="w-full text-xs border border-slate-200 rounded-lg px-3 py-1.5 pr-7 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm leading-none"
+            >✕</button>
+          )}
+        </div>
+        {filteredRankGroups.length > 0 && (
           <div className="flex items-center gap-1 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
-            {rankGroups.map(({ rank }, idx) => (
+            {filteredRankGroups.map(({ rank }, idx) => (
               <button key={rank} onClick={() => { setJumpRankIdx(idx); jumpToRank(rank); }}
                 className="text-xs whitespace-nowrap px-2 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors shrink-0 font-medium">
                 {rank}
               </button>
             ))}
-            {rankGroups.length > 1 && (
+            {filteredRankGroups.length > 1 && (
               <button onClick={jumpToNextRank}
                 className="text-xs whitespace-nowrap px-2.5 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shrink-0 font-medium ml-1">
                 次→
@@ -463,7 +490,10 @@ function AdminLeftPane({
           onDragEnd={handleDragEnd}
         >
           <div className="p-4 space-y-3">
-            {rankGroups.map(({ rank, items: rankItems }, groupIdx) => (
+            {searchQuery.trim() && filteredRankGroups.length === 0 && (
+              <p className="text-xs text-slate-400 text-center py-8">該当する項目がありません</p>
+            )}
+            {filteredRankGroups.map(({ rank, items: rankItems }, groupIdx) => (
               <div key={rank} ref={el => { rankGroupRefs.current[rank] = el; }} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                 {/* ランクグループヘッダー */}
                 <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
@@ -481,13 +511,13 @@ function AdminLeftPane({
                     <span className="text-xs text-slate-400">{rankItems.length}件</span>
                     <button
                       onClick={() => moveRankGroup(rank, -1)}
-                      disabled={groupIdx === 0 || !!activeDragId}
+                      disabled={groupIdx === 0 || !!activeDragId || !!searchQuery.trim()}
                       className="text-xs w-6 h-6 flex items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors font-bold"
                       title="上に移動"
                     >↑</button>
                     <button
                       onClick={() => moveRankGroup(rank, 1)}
-                      disabled={groupIdx === rankGroups.length - 1 || !!activeDragId}
+                      disabled={groupIdx === filteredRankGroups.length - 1 || !!activeDragId || !!searchQuery.trim()}
                       className="text-xs w-6 h-6 flex items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default transition-colors font-bold"
                       title="下に移動"
                     >↓</button>
