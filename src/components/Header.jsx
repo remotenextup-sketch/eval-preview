@@ -9,6 +9,7 @@ export default function Header({
   onSettingsClick,
   onSurveyBadgeClick,
   onBugBoardClick,
+  bugCount,
 }) {
   return (
     <>
@@ -93,10 +94,15 @@ export default function Header({
           {/* バグ報告ボタン */}
           <button
             onClick={onBugBoardClick}
-            className="text-sm px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors shrink-0 text-slate-500 hover:text-red-600"
+            className="relative text-sm px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors shrink-0 text-slate-500 hover:text-red-600"
             title="バグ報告掲示板"
           >
             🐛
+            {bugCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-0.5 leading-none">
+                {bugCount}
+              </span>
+            )}
           </button>
 
           {/* 設定ボタン */}

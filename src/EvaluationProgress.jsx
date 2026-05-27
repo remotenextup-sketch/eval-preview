@@ -74,6 +74,7 @@ export default function EvaluationProgress() {
   const [showSettings, setShowSettings]     = useState(false);
   const [showSurveyModal, setShowSurveyModal] = useState(false);
   const [showBugBoard, setShowBugBoard]     = useState(false);
+  const [bugCount, setBugCount]             = useState(0);
 
   // ── KPI目標（今月・選択中ユーザー）──
   const [kpiTarget, setKpiTarget] = useState(null);
@@ -103,6 +104,16 @@ export default function EvaluationProgress() {
     checkSurveyUnread().catch(() => {});
     return () => { cancelled = true; };
   }, [checkSurveyUnread]);
+
+  // 未解決バグ件数（open + in_progress）
+  const refreshBugCount = useCallback(async () => {
+    const { count } = await supabase.from('bug_reports')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['open', 'in_progress']);
+    setBugCount(count ?? 0);
+  }, []);
+
+  useEffect(() => { refreshBugCount(); }, [refreshBugCount]);
 
   // KPI目標フェッチ（選択ユーザー・今月）
   useEffect(() => {
@@ -687,6 +698,7 @@ export default function EvaluationProgress() {
         onSettingsClick={() => setShowSettings(true)}
         onSurveyBadgeClick={() => setShowSurveyModal(true)}
         onBugBoardClick={() => setShowBugBoard(true)}
+        bugCount={bugCount}
       />
 
       {view === 'personal' && (
@@ -787,7 +799,7 @@ export default function EvaluationProgress() {
 
       {/* ── バグ報告掲示板 ── */}
       {showBugBoard && (
-        <BugBoardModal onClose={() => setShowBugBoard(false)} />
+        <BugBoardModal onClose={() => { setShowBugBoard(false); refreshBugCount(); }} onCountChange={refreshBugCount} />
       )}
 
       {/* ── フローティング取り組み中ボタン ── */}
