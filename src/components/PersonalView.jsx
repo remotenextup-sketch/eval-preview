@@ -86,13 +86,31 @@ function PeerEvidenceSection({ itemNo, selfUserName }) {
 function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
   evidenceText, onEvidenceTextChange, onAddText, onImageUpload, isUploading,
-  onDeleteEvidence, onUpdateEvidenceQuality,
+  onDeleteEvidence, onUpdateEvidenceQuality, onUpdateEvidenceComment,
 }) {
   const [localMemo, setLocalMemo] = useState(item.memo ?? '');
   const debounceRef = useRef(null);
   const fileRef = useRef(null);
   const evidences = item.evaluation_evidences ?? [];
   const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
+
+  // コメント編集状態: { [evidenceId]: { open: bool, draft: string, saving: bool } }
+  const [commentStates, setCommentStates] = useState({});
+
+  const toggleComment = (evId, existing) => {
+    setCommentStates(prev => {
+      const cur = prev[evId];
+      if (cur?.open) return { ...prev, [evId]: { open: false, draft: '', saving: false } };
+      return { ...prev, [evId]: { open: true, draft: existing ?? '', saving: false } };
+    });
+  };
+
+  const saveComment = async (evId) => {
+    const draft = commentStates[evId]?.draft ?? '';
+    setCommentStates(prev => ({ ...prev, [evId]: { ...prev[evId], saving: true } }));
+    await onUpdateEvidenceComment(evId, draft.trim());
+    setCommentStates(prev => ({ ...prev, [evId]: { open: false, draft: '', saving: false } }));
+  };
 
   useEffect(() => { setLocalMemo(item.memo ?? ''); }, [item.id, item.memo]);
 
@@ -153,6 +171,7 @@ function ItemDetail({
             <div className="space-y-2 mb-3">
               {evidences.map(ev => {
                 const isBad = ev.quality === 'bad';
+                const cs = commentStates[ev.id];
                 return (
                   <div key={ev.id} className={`rounded-xl border p-3 ${isBad ? 'bg-red-50 border-red-100' : ev.quality === 'good' ? 'bg-green-50 border-green-100' : 'bg-white border-slate-200'}`}>
                     <div className="flex items-start gap-2">
@@ -164,19 +183,60 @@ function ItemDetail({
                         ) : (
                           <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {ev.content}</p>
                         )}
+                        {/* 既存コメント表示 */}
+                        {ev.comment && !cs?.open && (
+                          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                            💬 {ev.comment}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
                         <button onClick={() => onUpdateEvidenceQuality(ev.id, 'good')} title="良い"
                           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${ev.quality === 'good' ? 'bg-green-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-green-50'}`}>👍</button>
                         <button onClick={() => onUpdateEvidenceQuality(ev.id, 'bad')} title="やり直し"
                           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isBad ? 'bg-red-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-red-50'}`}>👎</button>
+                        <button
+                          onClick={() => toggleComment(ev.id, ev.comment)}
+                          title={cs?.open ? 'キャンセル' : 'コメントを追加・編集'}
+                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${cs?.open ? 'bg-indigo-500 text-white' : ev.comment ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-indigo-50'}`}
+                        >💬</button>
                         <button onClick={() => onDeleteEvidence(ev.id)} title="削除"
                           className="text-xs px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">🗑</button>
                       </div>
                     </div>
-                    {isBad && <span className="inline-block mt-1.5 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-                      やり直し{ev.ng_reason ? `：${ev.ng_reason}` : ''}
-                    </span>}
+                    {isBad && (
+                      <span className="inline-block mt-1.5 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                        やり直し{ev.ng_reason ? `：${ev.ng_reason}` : ''}
+                      </span>
+                    )}
+                    {/* インラインコメント入力 */}
+                    {cs?.open && (
+                      <div className="mt-2 space-y-1.5">
+                        <textarea
+                          value={cs.draft}
+                          onChange={e => setCommentStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], draft: e.target.value } }))}
+                          placeholder="気づき・微妙だった点など"
+                          rows={2}
+                          autoFocus
+                          className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        />
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => saveComment(ev.id)}
+                            disabled={cs.saving}
+                            className="text-xs px-2.5 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                          >
+                            {cs.saving ? '保存中...' : '保存'}
+                          </button>
+                          <button
+                            onClick={() => toggleComment(ev.id, ev.comment)}
+                            className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
+                          >
+                            キャンセル
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
