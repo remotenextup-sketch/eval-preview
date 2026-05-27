@@ -441,29 +441,41 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
                     const state = getCellState(item, month);
                     const plan = item.item_def_id ? planMap[`${item.item_def_id}/${month}`] : null;
                     const mm = month.slice(5); // '06' etc
+                    const monthLabel = `${parseInt(mm, 10)}月`;
                     let cellStyle = {};
                     let cellCls = '';
+                    let textColor = '';
                     if (state === 'planned') {
                       cellStyle = { background: MONTH_COLORS[mm] };
                       cellCls = 'border border-white/40';
+                      textColor = 'text-slate-700';
                     } else if (state === 'achieved') {
                       cellCls = 'bg-green-500 cursor-default opacity-80';
+                      textColor = 'text-white';
                     } else if (state === 'overdue') {
                       cellCls = 'bg-red-400 hover:bg-red-500';
+                      textColor = 'text-white';
                     } else {
                       cellCls = 'bg-slate-100 hover:bg-slate-200 border border-slate-200';
+                      textColor = '';
                     }
                     return (
                       <td key={month} className={`text-center py-2 px-1 ${isCurrent ? 'bg-indigo-50' : ''}`} style={{ width: 56, minWidth: 56 }}>
                         <button
                           onClick={() => state !== 'achieved' && onCellClick(item, month, plan ?? null)}
                           disabled={state === 'achieved'}
-                          className={`w-8 h-8 rounded-lg transition-all ${cellCls}`}
+                          className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${cellCls}`}
                           style={cellStyle}
                           onMouseEnter={e => { if (state === 'planned') e.currentTarget.style.background = MONTH_COLORS_HOVER[mm]; }}
                           onMouseLeave={e => { if (state === 'planned') e.currentTarget.style.background = MONTH_COLORS[mm]; }}
                           title={state === 'achieved' ? '達成済み' : state === 'empty' ? '計画を登録' : '計画を解除'}
-                        />
+                        >
+                          {state !== 'empty' && (
+                            <span className={`text-[9px] font-bold leading-none pointer-events-none ${textColor}`}>
+                              {monthLabel}
+                            </span>
+                          )}
+                        </button>
                       </td>
                     );
                   })}
