@@ -27,7 +27,6 @@ function PeerEvidenceSection({ itemNo, selfUserName }) {
           .filter(row => row.evaluation_evidences?.length > 0)
           .flatMap(row =>
             row.evaluation_evidences
-              .filter(ev => ev.quality !== 'bad')
               .map(ev => ({ ...ev, user_name: row.user_name, achieved_month: row.achieved_month }))
           );
         setEvidences(flat);
@@ -60,24 +59,30 @@ function PeerEvidenceSection({ itemNo, selfUserName }) {
           {evidences.length === 0 ? (
             <p className="text-xs text-slate-400 text-center py-3 bg-slate-50 rounded-xl border border-slate-100">まだエビデンスがありません</p>
           ) : (
-            evidences.map((ev, i) => (
-              <div key={ev.id ?? i} className="bg-indigo-50 rounded-xl border border-indigo-100 p-3">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xs font-medium text-slate-700">{ev.user_name}</span>
-                  {ev.achieved_month && <span className="text-xs text-slate-400">{ev.achieved_month}</span>}
+            evidences.map((ev, i) => {
+              const isGood = ev.quality === 'good';
+              const isBad  = ev.quality === 'bad';
+              return (
+                <div key={ev.id ?? i} className={`rounded-xl border p-3 ${isBad ? 'bg-slate-100 border-slate-200' : 'bg-indigo-50 border-indigo-100'}`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    {isGood && <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">✅ Good</span>}
+                    {isBad  && <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">❌ Bad</span>}
+                    <span className="text-xs font-medium text-slate-700">{ev.user_name}</span>
+                    {ev.achieved_month && <span className="text-xs text-slate-400">{ev.achieved_month}</span>}
+                  </div>
+                  {ev.evidence_type === 'image' ? (
+                    <a href={ev.content} target="_blank" rel="noreferrer">
+                      <img src={ev.content} alt="evidence" className="rounded-lg max-w-full object-cover" style={{ maxHeight: 200 }} />
+                    </a>
+                  ) : (
+                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {ev.content}</p>
+                  )}
+                  {ev.comment && (
+                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">💬 {ev.comment}</p>
+                  )}
                 </div>
-                {ev.evidence_type === 'image' ? (
-                  <a href={ev.content} target="_blank" rel="noreferrer">
-                    <img src={ev.content} alt="evidence" className="rounded-lg max-w-full object-cover" style={{ maxHeight: 200 }} />
-                  </a>
-                ) : (
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {ev.content}</p>
-                )}
-                {ev.comment && (
-                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">💬 {ev.comment}</p>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
