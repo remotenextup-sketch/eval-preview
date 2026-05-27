@@ -6,13 +6,15 @@ import {
   STATUSES, STATUS_MAP, CURRENT_MONTH, RANK_OPTIONS, EMPTY_ITEM_FORM,
 } from './constants';
 
-import Header       from './components/Header';
-import PersonalView from './components/PersonalView';
-import OverallView  from './components/OverallView';
-import AdminView    from './components/AdminView';
-import SurveyView   from './components/SurveyView';
-import MembersView  from './components/MemberView';
-import SalaryView   from './components/SalaryView';
+import Header        from './components/Header';
+import PersonalView  from './components/PersonalView';
+import OverallView   from './components/OverallView';
+import AdminView     from './components/AdminView';
+import SurveyView    from './components/SurveyView';
+import MembersView   from './components/MemberView';
+import SalaryView    from './components/SalaryView';
+import SettingsModal from './components/SettingsModal';
+import SurveyModal   from './components/SurveyModal';
 
 // ============================================================
 export default function EvaluationProgress() {
@@ -70,6 +72,10 @@ export default function EvaluationProgress() {
   // ── サーベイ未回答バッジ ──
   const [surveyUnread, setSurveyUnread] = useState(false);
 
+  // ── 設定・サーベイモーダル ──
+  const [showSettings, setShowSettings]     = useState(false);
+  const [showSurveyModal, setShowSurveyModal] = useState(false);
+
   // ── KPI目標（今月・選択中ユーザー）──
   const [kpiTarget, setKpiTarget] = useState(null);
 
@@ -84,18 +90,20 @@ export default function EvaluationProgress() {
   const [pendingItemNo, setPendingItemNo] = useState(null);
 
   // サーベイ未回答チェック
-  useEffect(() => {
-    if (!selectedUser) return;
-    let cancelled = false;
-    (async () => {
-      const { data: active } = await supabase.from('surveys').select('id').eq('is_active', true).limit(1);
-      if (!active?.length || cancelled) { setSurveyUnread(false); return; }
-      const { data: resp } = await supabase.from('survey_responses')
-        .select('id').eq('survey_id', active[0].id).eq('user_id', selectedUser.id).eq('month', CURRENT_MONTH).limit(1);
-      if (!cancelled) setSurveyUnread(!(resp?.length));
-    })();
-    return () => { cancelled = true; };
+  const checkSurveyUnread = useCallback(async () => {
+    if (!selectedUser) { setSurveyUnread(false); return; }
+    const { data: active } = await supabase.from('surveys').select('id').eq('is_active', true).limit(1);
+    if (!active?.length) { setSurveyUnread(false); return; }
+    const { data: resp } = await supabase.from('survey_responses')
+      .select('id').eq('survey_id', active[0].id).eq('user_id', selectedUser.id).eq('month', CURRENT_MONTH).limit(1);
+    setSurveyUnread(!(resp?.length));
   }, [selectedUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkSurveyUnread().catch(() => {});
+    return () => { cancelled = true; };
+  }, [checkSurveyUnread]);
 
   // KPI目標フェッチ（選択ユーザー・今月）
   useEffect(() => {
@@ -503,15 +511,21 @@ export default function EvaluationProgress() {
     setUploading(prev => ({ ...prev, [progressId]: true }));
     const ext = file.name.split('.').pop();
     const filePath = `${progressId}/${Date.now()}.${ext}`;
+    console.log('[uploadImage] uploading:', filePath);
     const { error: upErr } = await supabase.storage.from('evidences').upload(filePath, file);
-    if (!upErr) {
-      const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
-      const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'image', content: publicUrl });
-      if (error) { console.error('[uploadImage] INSERT evidence error:', error); }
-      else {
-        console.log('[uploadImage] INSERT success, progressId:', progressId);
-        await loadEvidences(progressId);
-      }
+    if (upErr) {
+      console.error('[uploadImage] storage upload error:', upErr);
+      setUploading(prev => ({ ...prev, [progressId]: false }));
+      return;
+    }
+    const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
+    console.log('[uploadImage] publicUrl:', publicUrl);
+    const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'image', content: publicUrl });
+    if (error) {
+      console.error('[uploadImage] INSERT evidence error:', error);
+    } else {
+      console.log('[uploadImage] INSERT success, progressId:', progressId);
+      await loadEvidences(progressId);
     }
     setUploading(prev => ({ ...prev, [progressId]: false }));
   };
@@ -628,7 +642,7 @@ export default function EvaluationProgress() {
       }).select('*, evaluation_items(item_name)').single();
       if (!error && data) {
         setPlans(prev => [...prev, data]);
-        if (item.status === 'pending') {
+        if (item.status === 'pending' && month === CURRENT_MONTH) {
           await supabase.from('evaluation_progress').update({ status: 'planned', updated_at: new Date().toISOString() }).eq('id', item.id);
           setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'planned' } : i));
           setSelectedItem(prev => prev?.id === item.id ? { ...prev, status: 'planned' } : prev);
@@ -669,6 +683,8 @@ export default function EvaluationProgress() {
         plans={plans.filter(p => p.status !== 'achieved')} showPlanView={showPlanView} setShowPlanView={setShowPlanView}
         surveyUnread={surveyUnread}
         showQuestionsPanel={showQuestionsPanel} setShowQuestionsPanel={setShowQuestionsPanel}
+        onSettingsClick={() => setShowSettings(true)}
+        onSurveyBadgeClick={() => setShowSurveyModal(true)}
       />
 
       {view === 'personal' && (
@@ -751,6 +767,23 @@ export default function EvaluationProgress() {
         <div className="flex-1 overflow-hidden flex flex-col">
           <SalaryView users={users} />
         </div>
+      )}
+
+      {/* ── 設定モーダル ── */}
+      {showSettings && (
+        <SettingsModal
+          selectedUser={selectedUser}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* ── サーベイモーダル ── */}
+      {showSurveyModal && (
+        <SurveyModal
+          selectedUser={selectedUser}
+          users={users}
+          onClose={() => { setShowSurveyModal(false); checkSurveyUnread(); }}
+        />
       )}
 
       {/* ── フローティング取り組み中ボタン ── */}

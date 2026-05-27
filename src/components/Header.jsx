@@ -6,6 +6,8 @@ export default function Header({
   plans, showPlanView, setShowPlanView,
   surveyUnread,
   showQuestionsPanel, setShowQuestionsPanel,
+  onSettingsClick,
+  onSurveyBadgeClick,
 }) {
   return (
     <>
@@ -13,14 +15,11 @@ export default function Header({
         <div className="max-w-full px-3 py-1.5 flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-700 shrink-0">人事評価</span>
           <div className="flex rounded border border-slate-200 overflow-hidden shrink-0">
-            {[['personal','個人'],['overall','全体'],['survey','サーベイ'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
+            {[['personal','個人'],['overall','全体'],['admin','管理'],['members','メンバー'],['salary','時給']].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)}
                 className={`relative px-2.5 py-1 text-xs transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
               >
                 {l}
-                {v === 'survey' && surveyUnread && (
-                  <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />
-                )}
               </button>
             ))}
           </div>
@@ -70,12 +69,33 @@ export default function Header({
           {view === 'admin' && selectedUser && (
             <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">投稿者: {selectedUser.name}</span>
           )}
+
+          {/* サーベイバッジ */}
+          {surveyUnread && (
+            <button
+              onClick={onSurveyBadgeClick}
+              className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors animate-pulse shrink-0"
+              title="未回答のサーベイがあります"
+            >
+              📋 サーベイあり
+            </button>
+          )}
+
           <button
             onClick={() => window.open('/sticky', 'sticky', 'width=320,height=600,resizable=yes')}
             className="text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors shrink-0 ml-auto"
             title="付箋を別ウィンドウで開く"
           >
             📌 付箋
+          </button>
+
+          {/* 設定ボタン */}
+          <button
+            onClick={onSettingsClick}
+            className="text-sm px-1.5 py-0.5 rounded hover:bg-slate-100 transition-colors shrink-0 text-slate-500 hover:text-slate-700"
+            title="設定"
+          >
+            ⚙️
           </button>
         </div>
       </header>

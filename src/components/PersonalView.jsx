@@ -345,7 +345,17 @@ const GANTT_MONTHS = (() => {
   });
 })();
 
-console.log('[GanttPanel] GANTT_MONTHS count:', GANTT_MONTHS.length, GANTT_MONTHS);
+// 月ごとの色（計画中セルに使用）
+const MONTH_COLORS = {
+  '01': '#bfdbfe', '02': '#a5f3fc', '03': '#ddd6fe', '04': '#fbcfe8',
+  '05': '#fecdd3', '06': '#7dd3fc', '07': '#86efac', '08': '#fdba74',
+  '09': '#fcd34d', '10': '#99f6e4', '11': '#e2e8f0', '12': '#c7d2fe',
+};
+const MONTH_COLORS_HOVER = {
+  '01': '#93c5fd', '02': '#67e8f9', '03': '#c4b5fd', '04': '#f9a8d4',
+  '05': '#fda4af', '06': '#38bdf8', '07': '#4ade80', '08': '#fb923c',
+  '09': '#fbbf24', '10': '#2dd4bf', '11': '#94a3b8', '12': '#a5b4fc',
+};
 
 function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
   const planMap = {};
@@ -367,6 +377,9 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
     return 'planned';
   };
 
+  // 表示月の中で重複なく月番号を取得して凡例用に使う
+  const legendMonths = [...new Set(GANTT_MONTHS.map(m => m.slice(5)))];
+
   if (plansLoading) {
     return <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">読み込み中...</div>;
   }
@@ -374,15 +387,30 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-200 bg-white shrink-0">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-slate-700">{selectedUser?.name} の目標管理</p>
             <p className="text-xs text-slate-400">セルをクリックして計画を登録・解除</p>
           </div>
-          <div className="flex items-center gap-2.5 text-xs text-slate-500">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-400 inline-block" />計画</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-400 inline-block" />達成</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-400 inline-block" />超過</span>
+          <div className="flex flex-col items-end gap-1">
+            {/* ステータス凡例 */}
+            <div className="flex items-center gap-2.5 text-xs text-slate-500">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block opacity-80" />完了</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-400 inline-block" />期限切れ</span>
+            </div>
+            {/* 月別カラー凡例 */}
+            <div className="flex items-center gap-1 flex-wrap justify-end">
+              <span className="text-xs text-slate-400 mr-0.5">計画中:</span>
+              {legendMonths.map(mm => (
+                <span key={mm} className="flex items-center gap-0.5 text-xs text-slate-500">
+                  <span
+                    className="w-3 h-3 rounded-sm inline-block border border-white/50"
+                    style={{ background: MONTH_COLORS[mm] }}
+                  />
+                  {parseInt(mm, 10)}月
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -412,19 +440,28 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
                     const isCurrent = month === CURRENT_MONTH;
                     const state = getCellState(item, month);
                     const plan = item.item_def_id ? planMap[`${item.item_def_id}/${month}`] : null;
-                    const cellCls = state === 'planned'
-                      ? 'bg-blue-400 hover:bg-blue-500'
-                      : state === 'achieved'
-                        ? 'bg-green-400 cursor-default opacity-70'
-                        : state === 'overdue'
-                          ? 'bg-red-400 hover:bg-red-500'
-                          : 'bg-slate-100 hover:bg-slate-200 border border-slate-200';
+                    const mm = month.slice(5); // '06' etc
+                    let cellStyle = {};
+                    let cellCls = '';
+                    if (state === 'planned') {
+                      cellStyle = { background: MONTH_COLORS[mm] };
+                      cellCls = 'border border-white/40';
+                    } else if (state === 'achieved') {
+                      cellCls = 'bg-green-500 cursor-default opacity-80';
+                    } else if (state === 'overdue') {
+                      cellCls = 'bg-red-400 hover:bg-red-500';
+                    } else {
+                      cellCls = 'bg-slate-100 hover:bg-slate-200 border border-slate-200';
+                    }
                     return (
                       <td key={month} className={`text-center py-2 px-1 ${isCurrent ? 'bg-indigo-50' : ''}`} style={{ width: 56, minWidth: 56 }}>
                         <button
                           onClick={() => state !== 'achieved' && onCellClick(item, month, plan ?? null)}
                           disabled={state === 'achieved'}
-                          className={`w-8 h-8 rounded-lg transition-colors ${cellCls}`}
+                          className={`w-8 h-8 rounded-lg transition-all ${cellCls}`}
+                          style={cellStyle}
+                          onMouseEnter={e => { if (state === 'planned') e.currentTarget.style.background = MONTH_COLORS_HOVER[mm]; }}
+                          onMouseLeave={e => { if (state === 'planned') e.currentTarget.style.background = MONTH_COLORS[mm]; }}
                           title={state === 'achieved' ? '達成済み' : state === 'empty' ? '計画を登録' : '計画を解除'}
                         />
                       </td>

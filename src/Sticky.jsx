@@ -31,10 +31,20 @@ export default function Sticky() {
 
   // 取り組み中項目を取得
   useEffect(() => {
-    if (!selectedUser) return;
+    if (!selectedUser) {
+      console.log('[Sticky] selectedUser is null, skipping fetch');
+      setItems([]);
+      return;
+    }
     setLoading(true);
     setItems([]);
     const pName = selectedUser.progress_name ?? selectedUser.name;
+    console.log('[Sticky] fetching for user:', selectedUser.name, '/ pName:', pName, '/ rank:', selectedUser.rank);
+
+    const itemsQuery = selectedUser.rank
+      ? supabase.from('evaluation_items').select('no, item_name, rank').eq('rank', selectedUser.rank)
+      : supabase.from('evaluation_items').select('no, item_name, rank');
+
     Promise.all([
       supabase
         .from('evaluation_progress')
@@ -42,15 +52,15 @@ export default function Sticky() {
         .eq('user_name', pName)
         .eq('status', 'in_progress')
         .order('item_no'),
-      supabase
-        .from('evaluation_items')
-        .select('no, item_name, rank')
-        .eq('rank', selectedUser.rank),
-    ]).then(([{ data: progress }, { data: itemDefs }]) => {
+      itemsQuery,
+    ]).then(([{ data: progress, error: progressErr }, { data: itemDefs, error: itemErr }]) => {
+      console.log('[Sticky] progress rows:', progress?.length ?? 0, progressErr ? '/ error:' + progressErr.message : '');
+      console.log('[Sticky] itemDefs rows:', itemDefs?.length ?? 0, itemErr ? '/ error:' + itemErr.message : '');
       const itemMap = Object.fromEntries((itemDefs || []).map(d => [d.no, d]));
       const merged = (progress || [])
         .map(p => ({ ...p, item_name: itemMap[p.item_no]?.item_name, rank: itemMap[p.item_no]?.rank }))
         .filter(p => p.item_name);
+      console.log('[Sticky] merged in_progress items:', merged.length);
       setItems(merged);
       setLoading(false);
     });
