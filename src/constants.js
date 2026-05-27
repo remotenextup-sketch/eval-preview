@@ -1,8 +1,6 @@
 export const STATUSES = [
   { value: 'pending',         label: '未着手',     bg: 'bg-gray-50',   border: 'border-l-gray-300',  badge: 'bg-gray-200 text-gray-700',   bar: '#9ca3af' },
-  { value: 'planned',         label: '計画中',     bg: 'bg-cyan-50',   border: 'border-l-cyan-400',  badge: 'bg-cyan-100 text-cyan-800',   bar: '#22d3ee' },
   { value: 'in_progress',     label: '取り組み中', bg: 'bg-yellow-50', border: 'border-l-yellow-400',badge: 'bg-yellow-100 text-yellow-800',bar: '#fbbf24' },
-  { value: 'clear_scheduled', label: 'クリア予定', bg: 'bg-purple-50', border: 'border-l-purple-400',badge: 'bg-purple-100 text-purple-800',bar: '#a78bfa' },
   { value: 'clear_reported',  label: 'クリア報告', bg: 'bg-blue-50',   border: 'border-l-blue-400',  badge: 'bg-blue-100 text-blue-800',   bar: '#60a5fa' },
   { value: 'completed',       label: '完了',       bg: 'bg-green-50',  border: 'border-l-green-400', badge: 'bg-green-100 text-green-800', bar: '#34d399' },
 ];
