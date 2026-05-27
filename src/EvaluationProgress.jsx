@@ -54,9 +54,6 @@ export default function EvaluationProgress() {
   const [mtgMode, setMtgMode]                     = useState(false);
   const [itemCommentCounts, setItemCommentCounts] = useState({});
 
-  // ── NG理由モーダル ──
-  const [ngModal, setNgModal]           = useState(null);
-  const [ngReasonText, setNgReasonText] = useState('');
 
   // ── クリア計画 ──
   const [plans, setPlans]               = useState([]);
@@ -549,11 +546,6 @@ export default function EvaluationProgress() {
   };
 
   const updateEvidenceQuality = (progressId, evidenceId, quality) => {
-    if (quality === 'bad') {
-      setNgModal({ progressId, evidenceId });
-      setNgReasonText('');
-      return;
-    }
     supabase.from('evaluation_evidences').update({ quality, ng_reason: null }).eq('id', evidenceId).then(({ error }) => {
       if (!error) {
         const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality, ng_reason: null } : e) });
@@ -563,18 +555,14 @@ export default function EvaluationProgress() {
     });
   };
 
-  const confirmNgReason = async () => {
-    if (!ngModal) return;
-    const { progressId, evidenceId } = ngModal;
-    const reason = ngReasonText.trim() || null;
+  const saveBadQuality = async (progressId, evidenceId, ngReason) => {
+    const reason = ngReason || null;
     const { error } = await supabase.from('evaluation_evidences').update({ quality: 'bad', ng_reason: reason }).eq('id', evidenceId);
     if (!error) {
       const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality: 'bad', ng_reason: reason } : e) });
       setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
       setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
     }
-    setNgModal(null);
-    setNgReasonText('');
   };
 
   const addPlan = async () => {
@@ -678,6 +666,7 @@ export default function EvaluationProgress() {
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality),
     onUpdateEvidenceComment: (evidenceId, comment) => updateEvidenceComment(selectedItem.id, evidenceId, comment),
+    onSaveBadQuality: (evidenceId, ngReason) => saveBadQuality(selectedItem.id, evidenceId, ngReason),
   } : null;
 
   // ============================================================
@@ -713,9 +702,6 @@ export default function EvaluationProgress() {
           plans={plans} plansLoading={plansLoading}
           onCellClick={togglePlanCell}
           detailProps={detailProps}
-          ngModal={ngModal} setNgModal={setNgModal}
-          ngReasonText={ngReasonText} setNgReasonText={setNgReasonText}
-          onConfirmNgReason={confirmNgReason}
           showQuestionsPanel={showQuestionsPanel} setShowQuestionsPanel={setShowQuestionsPanel}
           kpiTarget={kpiTarget}
         />

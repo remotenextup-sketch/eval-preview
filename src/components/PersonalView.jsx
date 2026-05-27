@@ -86,7 +86,7 @@ function PeerEvidenceSection({ itemNo, selfUserName }) {
 function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
   evidenceText, onEvidenceTextChange, onAddText, onImageUpload, isUploading,
-  onDeleteEvidence, onUpdateEvidenceQuality, onUpdateEvidenceComment,
+  onDeleteEvidence, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
 }) {
   const [localMemo, setLocalMemo] = useState(item.memo ?? '');
   const debounceRef = useRef(null);
@@ -94,8 +94,10 @@ function ItemDetail({
   const evidences = item.evaluation_evidences ?? [];
   const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
 
-  // コメント編集状態: { [evidenceId]: { open: bool, draft: string, saving: bool } }
+  // コメント編集状態
   const [commentStates, setCommentStates] = useState({});
+  // NG理由インライン編集状態
+  const [ngStates, setNgStates] = useState({});
 
   const toggleComment = (evId, existing) => {
     setCommentStates(prev => {
@@ -110,6 +112,21 @@ function ItemDetail({
     setCommentStates(prev => ({ ...prev, [evId]: { ...prev[evId], saving: true } }));
     await onUpdateEvidenceComment(evId, draft.trim());
     setCommentStates(prev => ({ ...prev, [evId]: { open: false, draft: '', saving: false } }));
+  };
+
+  const toggleNg = (evId, existing) => {
+    setNgStates(prev => {
+      const cur = prev[evId];
+      if (cur?.open) return { ...prev, [evId]: { open: false, draft: '', saving: false } };
+      return { ...prev, [evId]: { open: true, draft: existing ?? '', saving: false } };
+    });
+  };
+
+  const saveNg = async (evId) => {
+    const draft = ngStates[evId]?.draft ?? '';
+    setNgStates(prev => ({ ...prev, [evId]: { ...prev[evId], saving: true } }));
+    await onSaveBadQuality(evId, draft.trim());
+    setNgStates(prev => ({ ...prev, [evId]: { open: false, draft: '', saving: false } }));
   };
 
   useEffect(() => { setLocalMemo(item.memo ?? ''); }, [item.id, item.memo]);
@@ -172,6 +189,7 @@ function ItemDetail({
               {evidences.map(ev => {
                 const isBad = ev.quality === 'bad';
                 const cs = commentStates[ev.id];
+                const ns = ngStates[ev.id];
                 return (
                   <div key={ev.id} className={`rounded-xl border p-3 ${isBad ? 'bg-red-50 border-red-100' : ev.quality === 'good' ? 'bg-green-50 border-green-100' : 'bg-white border-slate-200'}`}>
                     <div className="flex items-start gap-2">
@@ -191,10 +209,17 @@ function ItemDetail({
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
-                        <button onClick={() => onUpdateEvidenceQuality(ev.id, 'good')} title="良い"
+                        <button
+                          onClick={() => {
+                            onUpdateEvidenceQuality(ev.id, 'good');
+                            if (ns?.open) setNgStates(prev => ({ ...prev, [ev.id]: { open: false, draft: '', saving: false } }));
+                          }}
+                          title="良い"
                           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${ev.quality === 'good' ? 'bg-green-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-green-50'}`}>👍</button>
-                        <button onClick={() => onUpdateEvidenceQuality(ev.id, 'bad')} title="やり直し"
-                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isBad ? 'bg-red-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-red-50'}`}>👎</button>
+                        <button
+                          onClick={() => toggleNg(ev.id, ev.ng_reason)}
+                          title="やり直し"
+                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isBad ? 'bg-red-500 text-white' : ns?.open ? 'bg-red-200 text-red-700' : 'bg-white border border-slate-200 text-slate-400 hover:bg-red-50'}`}>👎</button>
                         <button
                           onClick={() => toggleComment(ev.id, ev.comment)}
                           title={cs?.open ? 'キャンセル' : 'コメントを追加・編集'}
@@ -204,10 +229,42 @@ function ItemDetail({
                           className="text-xs px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">🗑</button>
                       </div>
                     </div>
-                    {isBad && (
-                      <span className="inline-block mt-1.5 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-                        やり直し{ev.ng_reason ? `：${ev.ng_reason}` : ''}
+                    {/* やり直しバッジ（インライン編集中は非表示） */}
+                    {isBad && !ns?.open && (
+                      <span
+                        className="inline-block mt-1.5 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full cursor-pointer hover:bg-red-200"
+                        onClick={() => toggleNg(ev.id, ev.ng_reason)}
+                      >
+                        やり直し{ev.ng_reason ? `：${ev.ng_reason}` : '（理由を追加）'}
                       </span>
+                    )}
+                    {/* NG理由インライン入力 */}
+                    {ns?.open && (
+                      <div className="mt-2 space-y-1.5">
+                        <textarea
+                          value={ns.draft}
+                          onChange={e => setNgStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], draft: e.target.value } }))}
+                          placeholder="やり直しの理由を入力（任意）"
+                          rows={2}
+                          autoFocus
+                          className="w-full text-xs border border-red-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
+                        />
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => saveNg(ev.id)}
+                            disabled={ns.saving}
+                            className="text-xs px-2.5 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors"
+                          >
+                            {ns.saving ? '保存中...' : 'やり直し確定'}
+                          </button>
+                          <button
+                            onClick={() => setNgStates(prev => ({ ...prev, [ev.id]: { open: false, draft: '', saving: false } }))}
+                            className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
+                          >
+                            キャンセル
+                          </button>
+                        </div>
+                      </div>
                     )}
                     {/* インラインコメント入力 */}
                     {cs?.open && (
@@ -892,7 +949,6 @@ export default function PersonalView({
   timelineData, currentMonthCount,
   plans, plansLoading, onCellClick,
   detailProps,
-  ngModal, setNgModal, ngReasonText, setNgReasonText, onConfirmNgReason,
   showQuestionsPanel, setShowQuestionsPanel,
   kpiTarget,
 }) {
@@ -959,33 +1015,6 @@ export default function PersonalView({
         )}
       </div>
 
-      {/* NGモーダル */}
-      {ngModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-            <div className="px-5 py-4 border-b border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700">やり直し理由を入力</h3>
-            </div>
-            <div className="p-5">
-              <textarea value={ngReasonText} onChange={e => setNgReasonText(e.target.value)}
-                placeholder="やり直しの理由を入力（任意）..."
-                rows={3} autoFocus
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-red-300" />
-              <p className="text-xs text-slate-400 mt-1.5">空白のまま確定することもできます</p>
-            </div>
-            <div className="px-5 py-4 border-t border-slate-200 flex gap-2">
-              <button onClick={onConfirmNgReason}
-                className="flex-1 text-sm py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium">
-                やり直し確定
-              </button>
-              <button onClick={() => { setNgModal(null); setNgReasonText(''); }}
-                className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">
-                キャンセル
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
