@@ -7,6 +7,7 @@ export default function Sticky() {
   const [items, setItems]               = useState([]);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState(null);
+  const [debugInfo, setDebugInfo]       = useState('');
 
   // ユーザー一覧を入社順で取得し、前回のユーザーを復元
   useEffect(() => {
@@ -32,10 +33,8 @@ export default function Sticky() {
   }, [selectedUser?.id]);
 
   // 取り組み中項目を取得
-  // 依存は selectedUser?.id のみ（オブジェクト全体だと参照変更で不安定になる）
   useEffect(() => {
     if (!selectedUser?.id) {
-      console.log('[Sticky] no selectedUser, skip fetch');
       setItems([]);
       return;
     }
@@ -44,13 +43,14 @@ export default function Sticky() {
     setLoading(true);
     setItems([]);
     setError(null);
+    setDebugInfo('');
 
     const pName = selectedUser.progress_name ?? selectedUser.name;
     console.log('[Sticky] fetch start — user:', selectedUser.name, '/ pName:', pName, '/ rank:', selectedUser.rank);
 
     (async () => {
       try {
-        // ① evaluation_progress から in_progress 行を取得（rank も取る）
+        // ① evaluation_progress から in_progress 行を取得
         const { data: progress, error: progressErr } = await supabase
           .from('evaluation_progress')
           .select('id, item_no, rank')
@@ -63,50 +63,50 @@ export default function Sticky() {
 
         if (progressErr) throw progressErr;
         if (!progress?.length) {
-          if (!cancelled) { setItems([]); setLoading(false); }
+          if (!cancelled) {
+            setItems([]);
+            setDebugInfo(`pName="${pName}" の取り組み中データなし`);
+            setLoading(false);
+          }
           return;
         }
 
-        // ② progress レコードに紐づくランクを列挙
-        //    rank が null の行はユーザーの現在ランクで補完
-        const ranksInProgress = [
-          ...new Set(
-            progress.map(p => p.rank || selectedUser.rank).filter(Boolean)
-          ),
-        ];
-        console.log('[Sticky] ranks in progress records:', ranksInProgress);
+        // ② progress の item_no 一覧で evaluation_items を取得
+        //    rank でなく item_no で絞ることでrank不一致を回避
+        const itemNos = [...new Set(progress.map(p => p.item_no))];
+        console.log('[Sticky] item_nos to fetch:', itemNos);
 
-        // ③ 該当ランクの evaluation_items を取得
-        let q = supabase.from('evaluation_items').select('no, item_name, rank');
-        if (ranksInProgress.length > 0) {
-          q = q.in('rank', ranksInProgress);
-        }
-        const { data: itemDefs, error: itemErr } = await q;
+        const { data: itemDefs, error: itemErr } = await supabase
+          .from('evaluation_items')
+          .select('no, item_name, rank')
+          .in('no', itemNos);
+
         console.log('[Sticky] itemDefs rows:', itemDefs?.length ?? 0,
           itemErr ? '/ ERROR: ' + itemErr.message : '');
 
         if (itemErr) throw itemErr;
 
-        // ④ itemMap を (no + rank) の複合キーで構築（item_no が全ランクで重複するため）
-        const itemMap = {};
-        (itemDefs || []).forEach(d => {
-          itemMap[`${d.no}_${d.rank}`] = d;
-        });
+        // ③ rank+no の複合キーで優先マッチ、なければ no のみでフォールバック
+        const byRankNo = {};
+        const byNo     = {};
+        for (const d of (itemDefs || [])) {
+          byRankNo[`${d.no}_${d.rank}`] = d;
+          if (!byNo[d.no]) byNo[d.no] = d; // 最初に見つかった定義を保持
+        }
 
-        // ⑤ progress × itemDefs をマージ
         const merged = progress
           .map(p => {
             const rank = p.rank || selectedUser.rank;
-            const def  = itemMap[`${p.item_no}_${rank}`];
+            const def  = byRankNo[`${p.item_no}_${rank}`] ?? byNo[p.item_no];
             if (!def) {
-              console.warn('[Sticky] no itemDef found for item_no:', p.item_no, 'rank:', rank);
+              console.warn('[Sticky] no itemDef for item_no:', p.item_no, 'rank:', rank);
               return null;
             }
-            return { ...p, item_name: def.item_name, rank: def.rank };
+            return { ...p, item_name: def.item_name, rank: rank || def.rank };
           })
           .filter(Boolean);
 
-        console.log('[Sticky] merged in_progress items:', merged.length, merged.map(m => m.item_name));
+        console.log('[Sticky] merged items:', merged.length, merged.map(m => m.item_name));
 
         if (!cancelled) { setItems(merged); setLoading(false); }
       } catch (err) {
@@ -175,13 +175,17 @@ export default function Sticky() {
         {loading ? (
           <p className="text-xs text-yellow-600 text-center py-8">読み込み中...</p>
         ) : error ? (
-          <div className="text-center py-8">
-            <p className="text-xs text-red-500">⚠ {error}</p>
+          <div className="text-center py-8 px-3">
+            <p className="text-2xl mb-2">⚠️</p>
+            <p className="text-xs text-red-500 break-all">{error}</p>
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-2xl mb-2">✅</p>
             <p className="text-xs text-yellow-700">取り組み中の項目はありません</p>
+            {debugInfo && (
+              <p className="text-[10px] text-yellow-500 mt-2">{debugInfo}</p>
+            )}
           </div>
         ) : (
           <div className="space-y-1.5 mt-0.5">
