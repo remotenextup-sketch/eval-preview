@@ -303,11 +303,6 @@ function ItemDetail({
             <textarea
               value={evidenceText}
               onChange={e => onEvidenceTextChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                }
-              }}
               placeholder="テキストエビデンスを入力（Shift+Enterで改行）"
               rows={2}
               className="flex-1 text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"

@@ -122,11 +122,6 @@ export default function ItemQuestionSection({ itemId, itemName }) {
         <input type="text" value={userName} onChange={e => setUserName(e.target.value)} placeholder="投稿者名..."
           className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         <textarea value={questionText} onChange={e => setQuestionText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-            }
-          }}
           placeholder="この項目について質問してください（Shift+Enterで改行）..." rows={2}
           className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         <button onClick={submitQuestion} disabled={saving || !questionText.trim() || !userName.trim()}
