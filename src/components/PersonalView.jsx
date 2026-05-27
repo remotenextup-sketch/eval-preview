@@ -73,6 +73,9 @@ function PeerEvidenceSection({ itemNo, selfUserName }) {
                 ) : (
                   <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {ev.content}</p>
                 )}
+                {ev.comment && (
+                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">💬 {ev.comment}</p>
+                )}
               </div>
             ))
           )}
