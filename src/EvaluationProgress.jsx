@@ -13,8 +13,9 @@ import AdminView     from './components/AdminView';
 import SurveyView    from './components/SurveyView';
 import MembersView   from './components/MemberView';
 import SalaryView    from './components/SalaryView';
-import SettingsModal from './components/SettingsModal';
-import SurveyModal   from './components/SurveyModal';
+import SettingsModal  from './components/SettingsModal';
+import SurveyModal    from './components/SurveyModal';
+import BugBoardModal  from './components/BugBoardModal';
 
 // ============================================================
 export default function EvaluationProgress() {
@@ -69,9 +70,10 @@ export default function EvaluationProgress() {
   // ── サーベイ未回答バッジ ──
   const [surveyUnread, setSurveyUnread] = useState(false);
 
-  // ── 設定・サーベイモーダル ──
+  // ── 設定・サーベイ・バグ報告モーダル ──
   const [showSettings, setShowSettings]     = useState(false);
   const [showSurveyModal, setShowSurveyModal] = useState(false);
+  const [showBugBoard, setShowBugBoard]     = useState(false);
 
   // ── KPI目標（今月・選択中ユーザー）──
   const [kpiTarget, setKpiTarget] = useState(null);
@@ -684,6 +686,7 @@ export default function EvaluationProgress() {
         showQuestionsPanel={showQuestionsPanel} setShowQuestionsPanel={setShowQuestionsPanel}
         onSettingsClick={() => setShowSettings(true)}
         onSurveyBadgeClick={() => setShowSurveyModal(true)}
+        onBugBoardClick={() => setShowBugBoard(true)}
       />
 
       {view === 'personal' && (
@@ -780,6 +783,11 @@ export default function EvaluationProgress() {
           users={users}
           onClose={() => { setShowSurveyModal(false); checkSurveyUnread(); }}
         />
+      )}
+
+      {/* ── バグ報告掲示板 ── */}
+      {showBugBoard && (
+        <BugBoardModal onClose={() => setShowBugBoard(false)} />
       )}
 
       {/* ── フローティング取り組み中ボタン ── */}

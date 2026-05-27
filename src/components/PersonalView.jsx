@@ -299,11 +299,16 @@ function ItemDetail({
               })}
             </div>
           )}
-          <div className="flex gap-2">
-            <input type="text" value={evidenceText} onChange={e => onEvidenceTextChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
-              placeholder="テキストエビデンスを入力..."
-              className="flex-1 text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            <button onClick={onAddText} disabled={!evidenceText.trim()} className="text-xs px-3 py-2 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-40">追加</button>
+          <div className="flex gap-2 items-end">
+            <textarea
+              value={evidenceText}
+              onChange={e => onEvidenceTextChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }}
+              placeholder="テキストエビデンスを入力（Shift+Enterで改行）"
+              rows={2}
+              className="flex-1 text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+            />
+            <button onClick={onAddText} disabled={!evidenceText.trim()} className="text-xs px-3 py-2 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-40 shrink-0">追加</button>
           </div>
           <button onClick={() => fileRef.current?.click()} disabled={isUploading}
             className={`mt-2 w-full flex items-center justify-center gap-2 text-xs py-3 border-2 border-dashed rounded-xl transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed border-slate-300 text-slate-400' : 'border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer'}`}>

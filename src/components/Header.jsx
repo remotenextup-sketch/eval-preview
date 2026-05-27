@@ -8,6 +8,7 @@ export default function Header({
   showQuestionsPanel, setShowQuestionsPanel,
   onSettingsClick,
   onSurveyBadgeClick,
+  onBugBoardClick,
 }) {
   return (
     <>
@@ -87,6 +88,15 @@ export default function Header({
             title="付箋を別ウィンドウで開く"
           >
             📌 付箋
+          </button>
+
+          {/* バグ報告ボタン */}
+          <button
+            onClick={onBugBoardClick}
+            className="text-sm px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors shrink-0 text-slate-500 hover:text-red-600"
+            title="バグ報告掲示板"
+          >
+            🐛
           </button>
 
           {/* 設定ボタン */}
