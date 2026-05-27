@@ -600,7 +600,25 @@ function ListPane({
   monthFilter, setMonthFilter, filteredItems, items,
   availableMonths, statusCounts, selectedUser, onItemClick, activeId,
   kpiTarget, currentMonthCount,
+  plans,
 }) {
+  // item_def_id ごとに「最も近い未達成の計画月」を導出
+  // 未来月優先、同方向なら CURRENT_MONTH に近い方を採用
+  const nearestPlanMonth = {};
+  (plans || []).forEach(p => {
+    if (!p.item_id || !p.planned_month || p.status === 'achieved') return;
+    const cur = nearestPlanMonth[p.item_id];
+    if (!cur) { nearestPlanMonth[p.item_id] = p.planned_month; return; }
+    const curFuture = cur >= CURRENT_MONTH;
+    const newFuture = p.planned_month >= CURRENT_MONTH;
+    if (newFuture && !curFuture) {
+      nearestPlanMonth[p.item_id] = p.planned_month;
+    } else if (newFuture === curFuture) {
+      if (newFuture ? p.planned_month < cur : p.planned_month > cur)
+        nearestPlanMonth[p.item_id] = p.planned_month;
+    }
+  });
+
   return (
     <div className="flex flex-col h-full">
       <div className="bg-white border-b border-slate-200 px-3 py-1.5 space-y-1 shrink-0">
@@ -681,6 +699,9 @@ function ListPane({
                 const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
                 const evidences = item.evaluation_evidences ?? [];
                 const isActive = item.id === activeId;
+                // 計画月バッジ（完了済みは非表示）
+                const planMonth = item.status !== 'completed' ? nearestPlanMonth[item.item_def_id] : null;
+                const planMM    = planMonth?.slice(5); // '06' etc
                 return (
                   <div key={item.id} onClick={() => onItemClick(item)}
                     className={`px-4 py-3 cursor-pointer flex items-start gap-2 border-l-4 transition-colors ${st.border} ${isActive ? 'bg-indigo-50' : `${st.bg} hover:brightness-95`}`}>
@@ -689,6 +710,14 @@ function ListPane({
                       <p className="text-sm text-slate-800 leading-snug">{item.item_name}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.badge}`}>{st.label}</span>
+                        {planMonth && planMM && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full font-medium text-slate-700"
+                            style={{ background: MONTH_COLORS[planMM] }}
+                          >
+                            {parseInt(planMM, 10)}月予定
+                          </span>
+                        )}
                         {item.achieved_month && <span className="text-xs text-slate-400">{item.achieved_month}</span>}
                         {item.memo && <span className="text-xs text-slate-400">📝</span>}
                         {evidences.length > 0 && <span className="text-xs text-slate-400">📎{evidences.length}</span>}
@@ -812,6 +841,7 @@ export default function PersonalView({
     monthFilter, setMonthFilter, filteredItems, items,
     availableMonths, statusCounts, selectedUser,
     kpiTarget, currentMonthCount,
+    plans,
   };
 
   const ganttPanelProps = {
