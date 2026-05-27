@@ -94,10 +94,10 @@ export default function Header({
           {/* バグ報告ボタン */}
           <button
             onClick={onBugBoardClick}
-            className="relative text-sm px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors shrink-0 text-slate-500 hover:text-red-600"
+            className="relative text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors shrink-0"
             title="バグ報告掲示板"
           >
-            🐛
+            🐛 バグ報告
             {bugCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-0.5 leading-none">
                 {bugCount}
