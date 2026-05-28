@@ -24,7 +24,10 @@ function calcDays(fromStr, toStr) {
 function AvatarCircle({ name, avatarUrl, size = 'md' }) {
   const sizeClass = { sm: 'w-9 h-9 text-sm', md: 'w-12 h-12 text-base', lg: 'w-20 h-20 text-2xl' }[size];
   if (avatarUrl) {
-    return <img src={avatarUrl} alt={name} className={`${sizeClass} rounded-full object-cover shrink-0 border border-slate-200`} />;
+    const base = avatarUrl.split('?')[0];
+    const tParam = avatarUrl.match(/[?&]t=(\d+)/)?.[1];
+    const displayUrl = tParam ? `${base}?t=${tParam}` : base;
+    return <img src={displayUrl} alt={name} className={`${sizeClass} rounded-full object-cover shrink-0 border border-slate-200`} />;
   }
   return (
     <div className={`${sizeClass} rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold shrink-0`}>
@@ -105,12 +108,21 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     const file = e.target.files?.[0];
     if (!file || !editTarget) return;
     setAvatarUploading(true);
+
     const ext = file.name.split('.').pop().toLowerCase();
-    const path = `${editTarget.id}.${ext}`;
-    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+    const ts = Date.now();
+    const newPath = `${editTarget.id}_${ts}.${ext}`;
+
+    const { error } = await supabase.storage.from('avatars').upload(newPath, file);
     if (!error) {
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      setEditForm(f => ({ ...f, avatar_url: publicUrl }));
+      // 旧ファイルを Storage から削除
+      const oldUrl = editForm.avatar_url || editTarget.avatar_url;
+      if (oldUrl) {
+        const match = decodeURIComponent(oldUrl).match(/\/avatars\/([^?]+)/);
+        if (match) await supabase.storage.from('avatars').remove([match[1]]);
+      }
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(newPath);
+      setEditForm(f => ({ ...f, avatar_url: `${publicUrl}?t=${ts}` }));
     }
     setAvatarUploading(false);
     e.target.value = '';
