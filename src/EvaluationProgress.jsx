@@ -542,14 +542,25 @@ export default function EvaluationProgress() {
     }
   };
 
-  const updateEvidenceQuality = (progressId, evidenceId, quality) => {
-    supabase.from('evaluation_evidences').update({ quality, ng_reason: null }).eq('id', evidenceId).then(({ error }) => {
-      if (!error) {
-        const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality, ng_reason: null } : e) });
-        setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
-        setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
+  const updateEvidenceQuality = async (progressId, evidenceId, quality) => {
+    const { error } = await supabase.from('evaluation_evidences').update({ quality, ng_reason: null }).eq('id', evidenceId);
+    if (error) return;
+    const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality, ng_reason: null } : e) });
+    setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
+    setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
+
+    if (quality === 'good') {
+      const target = items.find(i => i.id === progressId);
+      if (target && target.status !== 'completed') {
+        const { error: progressErr } = await supabase.from('evaluation_progress')
+          .update({ status: 'completed', achieved_month: CURRENT_MONTH, updated_at: new Date().toISOString() })
+          .eq('id', progressId);
+        if (!progressErr) {
+          setItems(prev => prev.map(i => i.id === progressId ? { ...i, status: 'completed', achieved_month: CURRENT_MONTH } : i));
+          setSelectedItem(prev => prev?.id === progressId ? { ...prev, status: 'completed', achieved_month: CURRENT_MONTH } : prev);
+        }
       }
-    });
+    }
   };
 
   const saveBadQuality = async (progressId, evidenceId, ngReason) => {
@@ -657,6 +668,7 @@ export default function EvaluationProgress() {
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality),
     onUpdateEvidenceComment: (evidenceId, comment) => updateEvidenceComment(selectedItem.id, evidenceId, comment),
     onSaveBadQuality: (evidenceId, ngReason) => saveBadQuality(selectedItem.id, evidenceId, ngReason),
+    selectedUser,
   } : null;
 
   // ============================================================

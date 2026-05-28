@@ -74,10 +74,9 @@ function QuestionItem({ q, onAnswer, onDelete, expanded, setExpanded }) {
   );
 }
 
-export default function ItemQuestionSection({ itemId, itemName }) {
+export default function ItemQuestionSection({ itemId, itemName, selectedUser }) {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading]     = useState(false);
-  const [userName, setUserName]   = useState('');
   const [questionText, setQuestionText] = useState('');
   const [saving, setSaving]       = useState(false);
   const [expanded, setExpanded]   = useState({});
@@ -91,10 +90,11 @@ export default function ItemQuestionSection({ itemId, itemName }) {
   }, [itemId]);
 
   const submitQuestion = async () => {
-    if (!questionText.trim() || !userName.trim()) return;
+    const userName = selectedUser?.name ?? '';
+    if (!questionText.trim() || !userName) return;
     setSaving(true);
     const { data, error } = await supabase.from('item_questions')
-      .insert({ item_id: itemId, user_name: userName.trim(), question: questionText.trim(), status: 'open' })
+      .insert({ item_id: itemId, user_name: userName, question: questionText.trim(), status: 'open' })
       .select().single();
     if (!error && data) { setQuestions(prev => [data, ...prev]); setQuestionText(''); }
     setSaving(false);
@@ -119,12 +119,13 @@ export default function ItemQuestionSection({ itemId, itemName }) {
         項目に関する質問{questions.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({questions.length}件)</span>}
       </p>
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-3 space-y-2">
-        <input type="text" value={userName} onChange={e => setUserName(e.target.value)} placeholder="投稿者名..."
-          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        {selectedUser?.name && (
+          <p className="text-xs text-slate-500">投稿者: <span className="font-medium text-slate-700">{selectedUser.name}</span></p>
+        )}
         <textarea value={questionText} onChange={e => setQuestionText(e.target.value)}
-          placeholder="この項目について質問してください（Shift+Enterで改行）..." rows={2}
+          placeholder="この項目について質問してください..." rows={2}
           className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-        <button onClick={submitQuestion} disabled={saving || !questionText.trim() || !userName.trim()}
+        <button onClick={submitQuestion} disabled={saving || !questionText.trim() || !selectedUser?.name}
           className="w-full text-sm py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40">
           {saving ? '投稿中...' : '質問を投稿'}
         </button>

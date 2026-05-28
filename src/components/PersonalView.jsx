@@ -95,6 +95,7 @@ function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
   evidenceText, onEvidenceTextChange, onAddText, onImageUpload, isUploading,
   onDeleteEvidence, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
+  selectedUser,
 }) {
   const [localMemo, setLocalMemo] = useState(item.memo ?? '');
   const debounceRef = useRef(null);
@@ -323,7 +324,7 @@ function ItemDetail({
           </button>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) onImageUpload(e.target.files[0]); e.target.value = ''; }} />
         </section>
-        <ItemQuestionSection itemId={item.item_def_id} itemName={item.item_name} />
+        <ItemQuestionSection itemId={item.item_def_id} itemName={item.item_name} selectedUser={selectedUser} />
       </div>
     </div>
   );
