@@ -81,22 +81,24 @@ export default function ItemQuestionSection({ itemId, itemName, selectedUser }) 
   const [saving, setSaving]       = useState(false);
   const [expanded, setExpanded]   = useState({});
 
-  useEffect(() => {
+  const loadQuestions = async () => {
     if (!itemId) return;
     setLoading(true);
-    supabase.from('item_questions').select('*').eq('item_id', itemId)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => { setQuestions(data || []); setLoading(false); });
-  }, [itemId]);
+    const { data } = await supabase.from('item_questions').select('*').eq('item_id', itemId)
+      .order('created_at', { ascending: false });
+    setQuestions(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadQuestions(); }, [itemId]);
 
   const submitQuestion = async () => {
     const userName = selectedUser?.name ?? '';
     if (!questionText.trim() || !userName) return;
     setSaving(true);
-    const { data, error } = await supabase.from('item_questions')
-      .insert({ item_id: itemId, user_name: userName, question: questionText.trim(), status: 'open' })
-      .select().single();
-    if (!error && data) { setQuestions(prev => [data, ...prev]); setQuestionText(''); }
+    const { error } = await supabase.from('item_questions')
+      .insert({ item_id: itemId, user_name: userName, question: questionText.trim(), status: 'open' });
+    if (!error) { setQuestionText(''); await loadQuestions(); }
     setSaving(false);
   };
 

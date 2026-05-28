@@ -5,34 +5,40 @@ import ItemQuestionSection from './ItemQuestions';
 import { STATUSES, STATUS_MAP, FILTER_TABS, CURRENT_MONTH } from '../constants';
 
 // ── PeerEvidenceSection ──────────────────────────────────────────
-function PeerEvidenceSection({ itemNo, selfUserName }) {
+function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
   const [evidences, setEvidences] = useState([]);
   const [loading, setLoading]     = useState(false);
   const [open, setOpen]           = useState(false);
 
-  useEffect(() => {
+  const loadPeerEvidences = async () => {
     if (!itemNo) return;
     setLoading(true);
-    setEvidences([]);
-    setOpen(false);
-    supabase
+    const { data, error } = await supabase
       .from('evaluation_progress')
       .select('user_name, achieved_month, evaluation_evidences(*)')
       .eq('item_no', itemNo)
       .eq('status', 'completed')
-      .neq('user_name', selfUserName)
-      .then(({ data, error }) => {
-        if (error) console.error('参考エビデンス取得エラー:', error);
-        const flat = (data || [])
-          .filter(row => row.evaluation_evidences?.length > 0)
-          .flatMap(row =>
-            row.evaluation_evidences
-              .map(ev => ({ ...ev, user_name: row.user_name, achieved_month: row.achieved_month }))
-          );
-        setEvidences(flat);
-        setLoading(false);
-      });
+      .neq('user_name', selfUserName);
+    if (error) console.error('参考エビデンス取得エラー:', error);
+    const flat = (data || [])
+      .filter(row => row.evaluation_evidences?.length > 0)
+      .flatMap(row =>
+        row.evaluation_evidences
+          .map(ev => ({ ...ev, user_name: row.user_name, achieved_month: row.achieved_month }))
+      );
+    setEvidences(flat);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    setEvidences([]);
+    setOpen(false);
+    loadPeerEvidences();
   }, [itemNo, selfUserName]);
+
+  useEffect(() => {
+    if (refreshKey > 0) loadPeerEvidences();
+  }, [refreshKey]);
 
   if (loading) {
     return (
@@ -102,6 +108,7 @@ function ItemDetail({
   const fileRef = useRef(null);
   const evidences = item.evaluation_evidences ?? [];
   const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
+  const [peerRefreshKey, setPeerRefreshKey] = useState(0);
 
   // コメント編集状態
   const [commentStates, setCommentStates] = useState({});
@@ -188,7 +195,7 @@ function ItemDetail({
           <textarea value={localMemo} onChange={e => handleMemoChange(e.target.value)} placeholder="進捗メモ・コメントを入力..." rows={4}
             className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
         </section>
-        <PeerEvidenceSection itemNo={item.item_no} selfUserName={item.user_name} />
+        <PeerEvidenceSection itemNo={item.item_no} selfUserName={item.user_name} refreshKey={peerRefreshKey} />
         <section>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
             エビデンス{evidences.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({evidences.length}件)</span>}
@@ -222,11 +229,12 @@ function ItemDetail({
                           onClick={() => {
                             onUpdateEvidenceQuality(ev.id, 'good');
                             if (ns?.open) setNgStates(prev => ({ ...prev, [ev.id]: { open: false, draft: '', saving: false } }));
+                            setPeerRefreshKey(k => k + 1);
                           }}
                           title="良い"
                           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${ev.quality === 'good' ? 'bg-green-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-green-50'}`}>👍</button>
                         <button
-                          onClick={() => toggleNg(ev.id, ev.ng_reason)}
+                          onClick={() => { toggleNg(ev.id, ev.ng_reason); setPeerRefreshKey(k => k + 1); }}
                           title="やり直し"
                           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isBad ? 'bg-red-500 text-white' : ns?.open ? 'bg-red-200 text-red-700' : 'bg-white border border-slate-200 text-slate-400 hover:bg-red-50'}`}>👎</button>
                         <button
