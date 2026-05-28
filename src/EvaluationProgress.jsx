@@ -542,23 +542,42 @@ export default function EvaluationProgress() {
     }
   };
 
-  const updateEvidenceQuality = async (progressId, evidenceId, quality) => {
+  const updateEvidenceQuality = async (progressId, evidenceId, quality, itemNo, userName) => {
+    console.log('[updateEvidenceQuality] quality:', quality, '/ progressId:', progressId, '/ itemNo:', itemNo, '/ userName:', userName);
+
     const { error } = await supabase.from('evaluation_evidences').update({ quality, ng_reason: null }).eq('id', evidenceId);
-    if (error) return;
+    if (error) { console.error('[updateEvidenceQuality] evidences update error:', error); return; }
+
     const upEv = item => ({ ...item, evaluation_evidences: (item.evaluation_evidences ?? []).map(e => e.id === evidenceId ? { ...e, quality, ng_reason: null } : e) });
     setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
     setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
 
     if (quality === 'good') {
       const target = items.find(i => i.id === progressId);
-      if (target && target.status !== 'completed') {
-        const { error: progressErr } = await supabase.from('evaluation_progress')
-          .update({ status: 'completed', achieved_month: CURRENT_MONTH, updated_at: new Date().toISOString() })
-          .eq('id', progressId);
-        if (!progressErr) {
-          setItems(prev => prev.map(i => i.id === progressId ? { ...i, status: 'completed', achieved_month: CURRENT_MONTH } : i));
-          setSelectedItem(prev => prev?.id === progressId ? { ...prev, status: 'completed', achieved_month: CURRENT_MONTH } : prev);
-        }
+      console.log('[updateEvidenceQuality] target status:', target?.status, '/ item_no:', target?.item_no, '/ user_name:', target?.user_name);
+
+      if (target?.status === 'completed') {
+        console.log('[updateEvidenceQuality] already completed, skip');
+        return;
+      }
+
+      const queryUserName = userName ?? target?.user_name;
+      const queryItemNo   = itemNo   ?? target?.item_no;
+      console.log('[updateEvidenceQuality] progress update query — user_name:', queryUserName, '/ item_no:', queryItemNo);
+
+      const { data: updated, error: progressErr } = await supabase
+        .from('evaluation_progress')
+        .update({ status: 'completed', achieved_month: CURRENT_MONTH, updated_at: new Date().toISOString() })
+        .eq('user_name', queryUserName)
+        .eq('item_no', queryItemNo)
+        .neq('status', 'completed')
+        .select('id, status, achieved_month');
+
+      console.log('[updateEvidenceQuality] progress update result:', updated, '/ error:', progressErr);
+
+      if (!progressErr) {
+        setItems(prev => prev.map(i => i.id === progressId ? { ...i, status: 'completed', achieved_month: CURRENT_MONTH } : i));
+        setSelectedItem(prev => prev?.id === progressId ? { ...prev, status: 'completed', achieved_month: CURRENT_MONTH } : prev);
       }
     }
   };
@@ -665,7 +684,7 @@ export default function EvaluationProgress() {
     onImageUpload: file => uploadImage(selectedItem.id, file),
     isUploading: uploading[selectedItem.id] ?? false,
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
-    onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality),
+    onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality, selectedItem.item_no, selectedUser?.progress_name ?? selectedUser?.name),
     onUpdateEvidenceComment: (evidenceId, comment) => updateEvidenceComment(selectedItem.id, evidenceId, comment),
     onSaveBadQuality: (evidenceId, ngReason) => saveBadQuality(selectedItem.id, evidenceId, ngReason),
     selectedUser,
