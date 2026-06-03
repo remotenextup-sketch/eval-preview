@@ -538,7 +538,6 @@ export default function EvaluationProgress() {
   const uploadImages = async (progressId, files, comment = null) => {
     const fileList = Array.isArray(files) ? files : [files];
     setUploading(prev => ({ ...prev, [progressId]: true }));
-    const rows = [];
     for (const file of fileList) {
       const ext = file.name.split('.').pop();
       const filePath = `${progressId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -547,10 +546,7 @@ export default function EvaluationProgress() {
       const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
       const row = { progress_id: progressId, evidence_type: 'image', content: publicUrl };
       if (comment) row.comment = comment;
-      rows.push(row);
-    }
-    if (rows.length > 0) {
-      const { error } = await supabase.from('evaluation_evidences').insert(rows);
+      const { error } = await supabase.from('evaluation_evidences').insert(row);
       if (error) console.error('[uploadImages] INSERT error:', error);
     }
     await loadEvidences(progressId);
