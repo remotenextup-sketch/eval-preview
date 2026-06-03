@@ -150,6 +150,12 @@ function ItemDetail({
 
   useEffect(() => { setLocalMemo(item.memo ?? ''); }, [item.id, item.memo]);
 
+  useEffect(() => {
+    setPendingFiles(prev => { prev.forEach(pf => URL.revokeObjectURL(pf.previewUrl)); return []; });
+    setPostText('');
+    setPosting(false);
+  }, [item.id]);
+
   const handleMemoChange = val => {
     setLocalMemo(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -368,13 +374,17 @@ function ItemDetail({
               <button
                 onClick={async () => {
                   if (!postText.trim() && pendingFiles.length === 0) return;
+                  const filesToPost = pendingFiles.slice();
                   setPosting(true);
-                  await onPost(postText, pendingFiles.map(pf => pf.file));
-                  pendingFiles.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
-                  setPendingFiles([]);
-                  setPostText('');
-                  setPosting(false);
-                  setPeerRefreshKey(k => k + 1);
+                  try {
+                    await onPost(postText, filesToPost.map(pf => pf.file));
+                    filesToPost.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
+                    setPendingFiles([]);
+                    setPostText('');
+                    setPeerRefreshKey(k => k + 1);
+                  } finally {
+                    setPosting(false);
+                  }
                 }}
                 disabled={posting || isUploading || (!postText.trim() && pendingFiles.length === 0)}
                 className="text-xs px-4 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium transition-colors"

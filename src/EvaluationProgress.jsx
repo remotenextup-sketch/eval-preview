@@ -531,15 +531,6 @@ export default function EvaluationProgress() {
     await loadEvidences(progressId);
   };
 
-  const post = async (progressId, text, files) => {
-    const trimmed = text.trim();
-    if (files.length > 0) {
-      await uploadImages(progressId, files, trimmed || null);
-    } else if (trimmed) {
-      await addTextEvidence(progressId, trimmed);
-    }
-  };
-
   const uploadImages = async (progressId, files, comment = null) => {
     const fileList = Array.isArray(files) ? files : [files];
     setUploading(prev => ({ ...prev, [progressId]: true }));
@@ -556,6 +547,15 @@ export default function EvaluationProgress() {
     }
     await loadEvidences(progressId);
     setUploading(prev => ({ ...prev, [progressId]: false }));
+  };
+
+  const post = async (progressId, text, files) => {
+    const trimmed = text.trim();
+    if (files.length > 0) {
+      await uploadImages(progressId, files, trimmed || null);
+    } else if (trimmed) {
+      await addTextEvidence(progressId, trimmed);
+    }
   };
 
   const deleteEvidence = async (progressId, evidenceId) => {
