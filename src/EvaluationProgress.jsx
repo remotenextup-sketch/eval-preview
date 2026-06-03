@@ -226,15 +226,15 @@ export default function EvaluationProgress() {
       supabase.from('evaluation_items').select('id, no, sort_order, item_name, description, rank, is_salary_item').eq('rank', selectedUser.rank),
       supabase.from('evaluation_plans').select('item_id').eq('user_id', selectedUser.id).eq('planned_month', CURRENT_MONTH),
     ]);
-    // Build rank-aware progress map: prefer exact rank match, accept null-rank as fallback
+    // Build rank-aware progress map:
+    // priority 2 = exact rank match, 1 = null rank, 0 = any other rank (last resort)
     const progressMap = {};
     (progress || []).forEach(p => {
       if (p.item_no == null) return;
-      if (p.rank != null && p.rank !== selectedUser.rank) return; // skip other-rank rows
+      const priority = p.rank === selectedUser.rank ? 2 : p.rank == null ? 1 : 0;
       const existing = progressMap[p.item_no];
-      if (!existing || (p.rank === selectedUser.rank && existing.rank !== selectedUser.rank)) {
-        progressMap[p.item_no] = p;
-      }
+      const existingPriority = existing ? (existing.rank === selectedUser.rank ? 2 : existing.rank == null ? 1 : 0) : -1;
+      if (priority > existingPriority) progressMap[p.item_no] = p;
     });
     const merged = (itemDefs || [])
       .filter(d => d.no != null)
@@ -535,28 +535,25 @@ export default function EvaluationProgress() {
     await loadEvidences(progressId);
   };
 
-  const uploadImage = async (progressId, file, comment = null) => {
+  const uploadImages = async (progressId, files, comment = null) => {
+    const fileList = Array.isArray(files) ? files : [files];
     setUploading(prev => ({ ...prev, [progressId]: true }));
-    const ext = file.name.split('.').pop();
-    const filePath = `${progressId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-    console.log('[uploadImage] uploading:', filePath);
-    const { error: upErr } = await supabase.storage.from('evidences').upload(filePath, file);
-    if (upErr) {
-      console.error('[uploadImage] storage upload error:', upErr);
-      setUploading(prev => ({ ...prev, [progressId]: false }));
-      return;
+    const rows = [];
+    for (const file of fileList) {
+      const ext = file.name.split('.').pop();
+      const filePath = `${progressId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('evidences').upload(filePath, file);
+      if (upErr) { console.error('[uploadImages] storage error:', upErr); continue; }
+      const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
+      const row = { progress_id: progressId, evidence_type: 'image', content: publicUrl };
+      if (comment) row.comment = comment;
+      rows.push(row);
     }
-    const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
-    console.log('[uploadImage] publicUrl:', publicUrl);
-    const row = { progress_id: progressId, evidence_type: 'image', content: publicUrl };
-    if (comment) row.comment = comment;
-    const { error } = await supabase.from('evaluation_evidences').insert(row);
-    if (error) {
-      console.error('[uploadImage] INSERT evidence error:', error);
-    } else {
-      console.log('[uploadImage] INSERT success, progressId:', progressId);
-      await loadEvidences(progressId);
+    if (rows.length > 0) {
+      const { error } = await supabase.from('evaluation_evidences').insert(rows);
+      if (error) console.error('[uploadImages] INSERT error:', error);
     }
+    await loadEvidences(progressId);
     setUploading(prev => ({ ...prev, [progressId]: false }));
   };
 
@@ -719,7 +716,7 @@ export default function EvaluationProgress() {
     evidenceText: evidenceText[selectedItem.id] ?? '',
     onEvidenceTextChange: val => setEvidenceText(prev => ({ ...prev, [selectedItem.id]: val })),
     onAddText: () => addTextEvidence(selectedItem.id),
-    onImageUpload: (file, comment) => uploadImage(selectedItem.id, file, comment),
+    onImageUpload: (files, comment) => uploadImages(selectedItem.id, files, comment),
     isUploading: uploading[selectedItem.id] ?? false,
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality, selectedItem.item_no, selectedUser?.progress_name ?? selectedUser?.name),

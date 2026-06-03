@@ -358,9 +358,7 @@ function ItemDetail({
                 <button
                   onClick={async () => {
                     setUploadingAll(true);
-                    for (const file of pendingFiles) {
-                      await onImageUpload(file, sharedComment.trim() || null);
-                    }
+                    await onImageUpload(pendingFiles, sharedComment.trim() || null);
                     setPendingFiles([]);
                     setSharedComment('');
                     setUploadingAll(false);
