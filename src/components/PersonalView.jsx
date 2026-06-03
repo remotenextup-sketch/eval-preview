@@ -5,18 +5,23 @@ import ItemQuestionSection from './ItemQuestions';
 import { STATUSES, STATUS_MAP, FILTER_TABS, CURRENT_MONTH } from '../constants';
 
 // ── DescriptionBlock: Markdownライクなdescription表示 ────────────
+// Matches [text](url) or bare https://... URLs
+const LINK_RE = /\[([^\]]+)\]\(([^\s)]+)\)|https?:\/\/[^\s\]()]+/g;
+
 function MdLine({ text }) {
-  const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
   const parts = [];
   let last = 0;
+  LINK_RE.lastIndex = 0;
   let match;
-  regex.lastIndex = 0;
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = LINK_RE.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
+    const href  = match[2] ?? match[0];
+    const label = match[1] ?? match[0];
     parts.push(
-      <a key={match.index} href={match[2]} target="_blank" rel="noreferrer noopener"
-        className="text-indigo-500 underline hover:text-indigo-700 break-all">
-        {match[1]}
+      <a key={match.index} href={href} target="_blank" rel="noreferrer noopener"
+        style={{ color: '#6366f1', textDecoration: 'underline' }}
+        className="break-all hover:opacity-75">
+        {label}
       </a>
     );
     last = match.index + match[0].length;
