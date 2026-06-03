@@ -31,7 +31,6 @@ export default function EvaluationProgress() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [showPersonalChart, setShowPersonalChart] = useState(false);
-  const [evidenceText, setEvidenceText] = useState({});
   const [uploading, setUploading]       = useState({});
 
   // ── 全体/部門別 ──
@@ -525,14 +524,20 @@ export default function EvaluationProgress() {
     setSelectedItem(prev => prev?.id === progressId ? updateEv(prev) : prev);
   }, []);
 
-  const addTextEvidence = async (progressId) => {
-    const text = (evidenceText[progressId] ?? '').trim();
+  const addTextEvidence = async (progressId, text) => {
     if (!text) return;
     const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'text', content: text });
     if (error) { console.error('[addTextEvidence] INSERT error:', error); return; }
-    console.log('[addTextEvidence] INSERT success, progressId:', progressId);
-    setEvidenceText(prev => ({ ...prev, [progressId]: '' }));
     await loadEvidences(progressId);
+  };
+
+  const post = async (progressId, text, files) => {
+    const trimmed = text.trim();
+    if (files.length > 0) {
+      await uploadImages(progressId, files, trimmed || null);
+    } else if (trimmed) {
+      await addTextEvidence(progressId, trimmed);
+    }
   };
 
   const uploadImages = async (progressId, files, comment = null) => {
@@ -709,10 +714,7 @@ export default function EvaluationProgress() {
 
   const detailProps = selectedItem ? {
     item: selectedItem, onStatusChange: updateStatus, onMemoChange: updateMemo,
-    evidenceText: evidenceText[selectedItem.id] ?? '',
-    onEvidenceTextChange: val => setEvidenceText(prev => ({ ...prev, [selectedItem.id]: val })),
-    onAddText: () => addTextEvidence(selectedItem.id),
-    onImageUpload: (files, comment) => uploadImages(selectedItem.id, files, comment),
+    onPost: (text, files) => post(selectedItem.id, text, files),
     isUploading: uploading[selectedItem.id] ?? false,
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality, selectedItem.item_no, selectedUser?.progress_name ?? selectedUser?.name),

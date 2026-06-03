@@ -99,7 +99,7 @@ function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
 // ── ItemDetail ───────────────────────────────────────────────────
 function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
-  evidenceText, onEvidenceTextChange, onAddText, onImageUpload, isUploading,
+  onPost, isUploading,
   onDeleteEvidence, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
   selectedUser,
 }) {
@@ -110,8 +110,8 @@ function ItemDetail({
   const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
   const [peerRefreshKey, setPeerRefreshKey] = useState(0);
   const [pendingFiles, setPendingFiles] = useState([]); // [{ file, previewUrl }]
-  const [sharedComment, setSharedComment] = useState('');
-  const [uploadingAll, setUploadingAll] = useState(false);
+  const [postText, setPostText] = useState('');
+  const [posting, setPosting] = useState(false);
 
   // コメント編集状態
   const [commentStates, setCommentStates] = useState({});
@@ -319,36 +319,31 @@ function ItemDetail({
               })}
             </div>
           )}
-          <div className="flex gap-2 items-end">
-            <textarea
-              value={evidenceText}
-              onChange={e => onEvidenceTextChange(e.target.value)}
-              placeholder="テキストエビデンスを入力（Shift+Enterで改行）"
-              rows={2}
-              className="flex-1 text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-            />
-            <button onClick={onAddText} disabled={!evidenceText.trim()} className="text-xs px-3 py-2 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-40 shrink-0">追加</button>
-          </div>
-          <button onClick={() => fileRef.current?.click()} disabled={isUploading || uploadingAll}
-            className={`mt-2 w-full flex items-center justify-center gap-2 text-xs py-3 border-2 border-dashed rounded-xl transition-colors ${(isUploading || uploadingAll) ? 'opacity-50 cursor-not-allowed border-slate-300 text-slate-400' : 'border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer'}`}>
-            📷 画像を選択
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden"
-            onChange={e => {
-              const file = e.target.files?.[0];
-              if (file) {
-                const previewUrl = URL.createObjectURL(file);
-                setPendingFiles(prev => [...prev, { file, previewUrl }]);
-              }
-              e.target.value = '';
-            }} />
-          {pendingFiles.length > 0 && (
-            <div className="mt-2 space-y-2 bg-indigo-50 rounded-xl border border-indigo-100 p-3">
-              <div className="flex flex-wrap gap-2">
+          <div className="mt-1 rounded-xl border border-slate-200 bg-white overflow-hidden">
+            {/* 画像選択ボタン */}
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={isUploading || posting}
+              className={`w-full flex items-center justify-center gap-1.5 text-xs py-2.5 border-b border-slate-100 transition-colors ${(isUploading || posting) ? 'opacity-50 cursor-not-allowed text-slate-400' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              📷 画像を追加
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const previewUrl = URL.createObjectURL(file);
+                  setPendingFiles(prev => [...prev, { file, previewUrl }]);
+                }
+                e.target.value = '';
+              }} />
+            {/* サムネイル一覧 */}
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-3 pt-2.5">
                 {pendingFiles.map((pf, i) => (
-                  <div key={i} className="relative group">
+                  <div key={i} className="relative">
                     <img src={pf.previewUrl} alt={pf.file.name}
-                      className="w-16 h-16 object-cover rounded-lg border border-indigo-200" />
+                      className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
                     <button
                       onClick={() => {
                         URL.revokeObjectURL(pf.previewUrl);
@@ -359,42 +354,35 @@ function ItemDetail({
                   </div>
                 ))}
               </div>
-              <textarea
-                value={sharedComment}
-                onChange={e => setSharedComment(e.target.value)}
-                placeholder="コメント（任意・全画像に付きます）"
-                rows={2}
-                className="w-full text-xs border border-indigo-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              <div className="flex gap-1.5">
-                <button
-                  onClick={async () => {
-                    setUploadingAll(true);
-                    await onImageUpload(pendingFiles.map(pf => pf.file), sharedComment.trim() || null);
-                    pendingFiles.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
-                    setPendingFiles([]);
-                    setSharedComment('');
-                    setUploadingAll(false);
-                    setPeerRefreshKey(k => k + 1);
-                  }}
-                  disabled={uploadingAll}
-                  className="flex-1 text-xs py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium transition-colors"
-                >
-                  {uploadingAll ? '⏳ アップロード中...' : `📤 ${pendingFiles.length}枚をアップロード`}
-                </button>
-                <button
-                  onClick={() => {
-                    pendingFiles.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
-                    setPendingFiles([]);
-                    setSharedComment('');
-                  }}
-                  className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
-                >
-                  キャンセル
-                </button>
-              </div>
+            )}
+            {/* テキスト入力 */}
+            <textarea
+              value={postText}
+              onChange={e => setPostText(e.target.value)}
+              placeholder="コメントやテキストエビデンスを入力..."
+              rows={3}
+              className="w-full text-xs px-3 py-2.5 bg-transparent resize-none focus:outline-none"
+            />
+            {/* 投稿ボタン */}
+            <div className="px-3 pb-2.5 flex justify-end">
+              <button
+                onClick={async () => {
+                  if (!postText.trim() && pendingFiles.length === 0) return;
+                  setPosting(true);
+                  await onPost(postText, pendingFiles.map(pf => pf.file));
+                  pendingFiles.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
+                  setPendingFiles([]);
+                  setPostText('');
+                  setPosting(false);
+                  setPeerRefreshKey(k => k + 1);
+                }}
+                disabled={posting || isUploading || (!postText.trim() && pendingFiles.length === 0)}
+                className="text-xs px-4 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium transition-colors"
+              >
+                {posting ? '⏳ 投稿中...' : '投稿する'}
+              </button>
             </div>
-          )}
+          </div>
         </section>
         <ItemQuestionSection itemId={item.item_def_id} itemName={item.item_name} selectedUser={selectedUser} />
       </div>
