@@ -109,7 +109,7 @@ function ItemDetail({
   const evidences = item.evaluation_evidences ?? [];
   const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
   const [peerRefreshKey, setPeerRefreshKey] = useState(0);
-  const [pendingFiles, setPendingFiles] = useState([]);
+  const [pendingFiles, setPendingFiles] = useState([]); // [{ file, previewUrl }]
   const [sharedComment, setSharedComment] = useState('');
   const [uploadingAll, setUploadingAll] = useState(false);
 
@@ -331,26 +331,38 @@ function ItemDetail({
           </div>
           <button onClick={() => fileRef.current?.click()} disabled={isUploading || uploadingAll}
             className={`mt-2 w-full flex items-center justify-center gap-2 text-xs py-3 border-2 border-dashed rounded-xl transition-colors ${(isUploading || uploadingAll) ? 'opacity-50 cursor-not-allowed border-slate-300 text-slate-400' : 'border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer'}`}>
-            📷 画像を選択（複数可）
+            📷 画像を選択
           </button>
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
             onChange={e => {
-              const files = Array.from(e.target.files || []);
-              if (files.length > 0) { setPendingFiles(files); setSharedComment(''); }
+              const file = e.target.files?.[0];
+              if (file) {
+                const previewUrl = URL.createObjectURL(file);
+                setPendingFiles(prev => [...prev, { file, previewUrl }]);
+              }
               e.target.value = '';
             }} />
           {pendingFiles.length > 0 && (
             <div className="mt-2 space-y-2 bg-indigo-50 rounded-xl border border-indigo-100 p-3">
-              <p className="text-xs font-semibold text-indigo-700">{pendingFiles.length}枚の画像を選択中</p>
-              <div className="flex flex-wrap gap-1">
-                {pendingFiles.map((f, i) => (
-                  <span key={i} className="text-[10px] bg-white border border-indigo-200 text-slate-600 rounded px-1.5 py-0.5 truncate max-w-[140px]">{f.name}</span>
+              <div className="flex flex-wrap gap-2">
+                {pendingFiles.map((pf, i) => (
+                  <div key={i} className="relative group">
+                    <img src={pf.previewUrl} alt={pf.file.name}
+                      className="w-16 h-16 object-cover rounded-lg border border-indigo-200" />
+                    <button
+                      onClick={() => {
+                        URL.revokeObjectURL(pf.previewUrl);
+                        setPendingFiles(prev => prev.filter((_, idx) => idx !== i));
+                      }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center leading-none hover:bg-red-600"
+                    >×</button>
+                  </div>
                 ))}
               </div>
               <textarea
                 value={sharedComment}
                 onChange={e => setSharedComment(e.target.value)}
-                placeholder="共有コメント（任意・全画像に付きます）"
+                placeholder="コメント（任意・全画像に付きます）"
                 rows={2}
                 className="w-full text-xs border border-indigo-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
@@ -358,7 +370,8 @@ function ItemDetail({
                 <button
                   onClick={async () => {
                     setUploadingAll(true);
-                    await onImageUpload(pendingFiles, sharedComment.trim() || null);
+                    await onImageUpload(pendingFiles.map(pf => pf.file), sharedComment.trim() || null);
+                    pendingFiles.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
                     setPendingFiles([]);
                     setSharedComment('');
                     setUploadingAll(false);
@@ -370,7 +383,11 @@ function ItemDetail({
                   {uploadingAll ? '⏳ アップロード中...' : `📤 ${pendingFiles.length}枚をアップロード`}
                 </button>
                 <button
-                  onClick={() => { setPendingFiles([]); setSharedComment(''); }}
+                  onClick={() => {
+                    pendingFiles.forEach(pf => URL.revokeObjectURL(pf.previewUrl));
+                    setPendingFiles([]);
+                    setSharedComment('');
+                  }}
                   className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
                 >
                   キャンセル
