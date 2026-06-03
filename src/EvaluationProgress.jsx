@@ -226,18 +226,31 @@ export default function EvaluationProgress() {
       supabase.from('evaluation_items').select('id, no, sort_order, item_name, description, rank, is_salary_item').eq('rank', selectedUser.rank),
       supabase.from('evaluation_plans').select('item_id').eq('user_id', selectedUser.id).eq('planned_month', CURRENT_MONTH),
     ]);
-    const itemMap = {};
-    (itemDefs || []).forEach(d => { if (d.no != null) itemMap[d.no] = d; });
-    const merged = (progress || [])
-      .filter(p => itemMap[p.item_no] != null)
-      .map(p => ({
-        ...p,
-        item_name: itemMap[p.item_no].item_name,
-        description: itemMap[p.item_no].description ?? '',
-        item_def_id: itemMap[p.item_no].id,
-        is_salary_item: itemMap[p.item_no].is_salary_item ?? false,
-        sort_order: itemMap[p.item_no].sort_order ?? itemMap[p.item_no].no ?? 9999,
-      }))
+    // Build rank-aware progress map: prefer exact rank match, accept null-rank as fallback
+    const progressMap = {};
+    (progress || []).forEach(p => {
+      if (p.item_no == null) return;
+      if (p.rank != null && p.rank !== selectedUser.rank) return; // skip other-rank rows
+      const existing = progressMap[p.item_no];
+      if (!existing || (p.rank === selectedUser.rank && existing.rank !== selectedUser.rank)) {
+        progressMap[p.item_no] = p;
+      }
+    });
+    const merged = (itemDefs || [])
+      .filter(d => d.no != null)
+      .map(d => {
+        const p = progressMap[d.no];
+        if (!p) return null;
+        return {
+          ...p,
+          item_name: d.item_name,
+          description: d.description ?? '',
+          item_def_id: d.id,
+          is_salary_item: d.is_salary_item ?? false,
+          sort_order: d.sort_order ?? d.no ?? 9999,
+        };
+      })
+      .filter(Boolean)
       .sort((a, b) => a.sort_order - b.sort_order);
 
     // 当月計画がある & pending/NULL の項目を 'in_progress' に一括更新
@@ -487,7 +500,11 @@ export default function EvaluationProgress() {
           supabase.from('evaluation_plans').update({ status: 'achieved' })
             .eq('user_id', selectedUser.id).eq('item_id', item.item_def_id)
             .in('status', ['planned', 'overdue'])
-            .then(() => setPlans(prev => prev.filter(p => p.item_id !== item.item_def_id)));
+            .then(() => setPlans(prev => prev.map(p =>
+              p.item_id === item.item_def_id && ['planned', 'overdue'].includes(p.status)
+                ? { ...p, status: 'achieved' }
+                : p
+            )));
         }
       }
     }
@@ -518,10 +535,10 @@ export default function EvaluationProgress() {
     await loadEvidences(progressId);
   };
 
-  const uploadImage = async (progressId, file) => {
+  const uploadImage = async (progressId, file, comment = null) => {
     setUploading(prev => ({ ...prev, [progressId]: true }));
     const ext = file.name.split('.').pop();
-    const filePath = `${progressId}/${Date.now()}.${ext}`;
+    const filePath = `${progressId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
     console.log('[uploadImage] uploading:', filePath);
     const { error: upErr } = await supabase.storage.from('evidences').upload(filePath, file);
     if (upErr) {
@@ -531,7 +548,9 @@ export default function EvaluationProgress() {
     }
     const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
     console.log('[uploadImage] publicUrl:', publicUrl);
-    const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'image', content: publicUrl });
+    const row = { progress_id: progressId, evidence_type: 'image', content: publicUrl };
+    if (comment) row.comment = comment;
+    const { error } = await supabase.from('evaluation_evidences').insert(row);
     if (error) {
       console.error('[uploadImage] INSERT evidence error:', error);
     } else {
@@ -636,7 +655,7 @@ export default function EvaluationProgress() {
 
   const achievePlan = async (planId) => {
     const { error } = await supabase.from('evaluation_plans').update({ status: 'achieved' }).eq('id', planId);
-    if (!error) setPlans(prev => prev.filter(p => p.id !== planId));
+    if (!error) setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: 'achieved' } : p));
   };
 
   const deletePlan = async (planId) => {
@@ -700,7 +719,7 @@ export default function EvaluationProgress() {
     evidenceText: evidenceText[selectedItem.id] ?? '',
     onEvidenceTextChange: val => setEvidenceText(prev => ({ ...prev, [selectedItem.id]: val })),
     onAddText: () => addTextEvidence(selectedItem.id),
-    onImageUpload: file => uploadImage(selectedItem.id, file),
+    onImageUpload: (file, comment) => uploadImage(selectedItem.id, file, comment),
     isUploading: uploading[selectedItem.id] ?? false,
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality, selectedItem.item_no, selectedUser?.progress_name ?? selectedUser?.name),

@@ -109,6 +109,9 @@ function ItemDetail({
   const evidences = item.evaluation_evidences ?? [];
   const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
   const [peerRefreshKey, setPeerRefreshKey] = useState(0);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [sharedComment, setSharedComment] = useState('');
+  const [uploadingAll, setUploadingAll] = useState(false);
 
   // コメント編集状態
   const [commentStates, setCommentStates] = useState({});
@@ -326,11 +329,57 @@ function ItemDetail({
             />
             <button onClick={onAddText} disabled={!evidenceText.trim()} className="text-xs px-3 py-2 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-40 shrink-0">追加</button>
           </div>
-          <button onClick={() => fileRef.current?.click()} disabled={isUploading}
-            className={`mt-2 w-full flex items-center justify-center gap-2 text-xs py-3 border-2 border-dashed rounded-xl transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed border-slate-300 text-slate-400' : 'border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer'}`}>
-            {isUploading ? '⏳ アップロード中...' : '📷 画像をアップロード'}
+          <button onClick={() => fileRef.current?.click()} disabled={isUploading || uploadingAll}
+            className={`mt-2 w-full flex items-center justify-center gap-2 text-xs py-3 border-2 border-dashed rounded-xl transition-colors ${(isUploading || uploadingAll) ? 'opacity-50 cursor-not-allowed border-slate-300 text-slate-400' : 'border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer'}`}>
+            📷 画像を選択（複数可）
           </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) onImageUpload(e.target.files[0]); e.target.value = ''; }} />
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={e => {
+              const files = Array.from(e.target.files || []);
+              if (files.length > 0) { setPendingFiles(files); setSharedComment(''); }
+              e.target.value = '';
+            }} />
+          {pendingFiles.length > 0 && (
+            <div className="mt-2 space-y-2 bg-indigo-50 rounded-xl border border-indigo-100 p-3">
+              <p className="text-xs font-semibold text-indigo-700">{pendingFiles.length}枚の画像を選択中</p>
+              <div className="flex flex-wrap gap-1">
+                {pendingFiles.map((f, i) => (
+                  <span key={i} className="text-[10px] bg-white border border-indigo-200 text-slate-600 rounded px-1.5 py-0.5 truncate max-w-[140px]">{f.name}</span>
+                ))}
+              </div>
+              <textarea
+                value={sharedComment}
+                onChange={e => setSharedComment(e.target.value)}
+                placeholder="共有コメント（任意・全画像に付きます）"
+                rows={2}
+                className="w-full text-xs border border-indigo-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={async () => {
+                    setUploadingAll(true);
+                    for (const file of pendingFiles) {
+                      await onImageUpload(file, sharedComment.trim() || null);
+                    }
+                    setPendingFiles([]);
+                    setSharedComment('');
+                    setUploadingAll(false);
+                    setPeerRefreshKey(k => k + 1);
+                  }}
+                  disabled={uploadingAll}
+                  className="flex-1 text-xs py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium transition-colors"
+                >
+                  {uploadingAll ? '⏳ アップロード中...' : `📤 ${pendingFiles.length}枚をアップロード`}
+                </button>
+                <button
+                  onClick={() => { setPendingFiles([]); setSharedComment(''); }}
+                  className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
+                >
+                  キャンセル
+                </button>
+              </div>
+            </div>
+          )}
         </section>
         <ItemQuestionSection itemId={item.item_def_id} itemName={item.item_name} selectedUser={selectedUser} />
       </div>
@@ -505,6 +554,7 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
   }
 
   const unachievedItems = items.filter(i => i.status !== 'completed');
+  const achievedItems = items.filter(i => i.status === 'completed');
 
   const getCellState = (item, month) => {
     if (!item.item_def_id) return 'empty';
@@ -529,6 +579,12 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
           <div>
             <p className="text-sm font-semibold text-slate-700">{selectedUser?.name} の目標管理</p>
             <p className="text-xs text-slate-400">セルをクリックして計画を登録・解除</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">進行中 {unachievedItems.length}件</span>
+              {achievedItems.length > 0 && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">✓ 達成済み {achievedItems.length}件</span>
+              )}
+            </div>
           </div>
           <div className="flex flex-col items-end gap-1">
             {/* ステータス凡例 */}
@@ -552,8 +608,8 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
           </div>
         </div>
       </div>
-      {unachievedItems.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">すべての項目が完了済みです</div>
+      {unachievedItems.length === 0 && achievedItems.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">項目がありません</div>
       ) : (
         <div className="flex-1 overflow-auto">
           <table className="border-collapse" style={{ minWidth: 200 + GANTT_MONTHS.length * 56 }}>
@@ -578,7 +634,7 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
                     const isCurrent = month === CURRENT_MONTH;
                     const state = getCellState(item, month);
                     const plan = item.item_def_id ? planMap[`${item.item_def_id}/${month}`] : null;
-                    const mm = month.slice(5); // '06' etc
+                    const mm = month.slice(5);
                     const monthLabel = `${parseInt(mm, 10)}月`;
                     let cellStyle = {};
                     let cellCls = '';
@@ -619,6 +675,35 @@ function GanttPanel({ items, plans, plansLoading, selectedUser, onCellClick }) {
                   })}
                 </tr>
               ))}
+              {achievedItems.length > 0 && (
+                <>
+                  <tr>
+                    <td colSpan={1 + GANTT_MONTHS.length} className="px-4 py-1.5 bg-green-50 sticky left-0 z-10 border-t border-green-200">
+                      <span className="text-[10px] font-semibold text-green-700 uppercase tracking-wide">✓ 達成済み ({achievedItems.length}件)</span>
+                    </td>
+                  </tr>
+                  {achievedItems.map(item => (
+                    <tr key={item.id} className="border-b border-green-100 bg-green-50 opacity-70">
+                      <td className="px-4 py-2 text-xs text-green-800 leading-snug bg-green-50 sticky left-0 z-10 border-r border-green-100" style={{ width: 200, minWidth: 200 }}>
+                        <span className="text-green-400 mr-1">#{item.item_no}</span>
+                        <span className="line-through">{item.item_name}</span>
+                        {item.achieved_month && <span className="ml-1 text-[10px] text-green-500 no-underline">{item.achieved_month}</span>}
+                      </td>
+                      {GANTT_MONTHS.map(month => {
+                        const plan = item.item_def_id ? planMap[`${item.item_def_id}/${month}`] : null;
+                        const isAchieved = plan?.status === 'achieved';
+                        return (
+                          <td key={month} className="text-center py-2 px-1" style={{ width: 56, minWidth: 56 }}>
+                            <div className={`w-8 h-8 rounded-lg mx-auto flex items-center justify-center ${isAchieved ? 'bg-green-400 opacity-60' : 'bg-green-100'}`}>
+                              {isAchieved && <span className="text-[9px] font-bold text-white leading-none">✓</span>}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </>
+              )}
             </tbody>
           </table>
         </div>

@@ -6,6 +6,8 @@ const PRIORITY_COLORS = { low: 'bg-slate-100 text-slate-600', medium: 'bg-yellow
 const STATUS_LABELS = { open: '未対応', in_progress: '対応中', resolved: '解決済み' };
 const STATUS_COLORS = { open: 'bg-red-50 border-red-200', in_progress: 'bg-yellow-50 border-yellow-200', resolved: 'bg-slate-50 border-slate-200' };
 const STATUS_BADGE = { open: 'bg-red-500 text-white', in_progress: 'bg-yellow-500 text-white', resolved: 'bg-slate-400 text-white' };
+const TAG_OPTIONS = ['バグ', '連絡', '報告', '質問'];
+const TAG_COLORS = { 'バグ': 'bg-red-100 text-red-700', '連絡': 'bg-blue-100 text-blue-700', '報告': 'bg-violet-100 text-violet-700', '質問': 'bg-amber-100 text-amber-700' };
 
 export default function BugBoardModal({ onClose, onCountChange }) {
   const isAdmin = sessionStorage.getItem('is_admin_mode') === 'true';
@@ -18,8 +20,10 @@ export default function BugBoardModal({ onClose, onCountChange }) {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [dbError, setDbError]       = useState('');
 
+  const [tagFilter, setTagFilter]   = useState('all');
+
   const [showForm, setShowForm]     = useState(false);
-  const [form, setForm]             = useState({ user_name: '', title: '', description: '', priority: 'medium' });
+  const [form, setForm]             = useState({ user_name: '', title: '', description: '', priority: 'medium', tag: 'バグ' });
   const [submitting, setSubmitting] = useState(false);
 
   const [commentUser, setCommentUser] = useState('');
@@ -68,7 +72,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
       console.error('[BugBoard] submitBug error:', error);
     } else if (data) {
       setBugs(prev => [data, ...prev]);
-      setForm({ user_name: '', title: '', description: '', priority: 'medium' });
+      setForm({ user_name: '', title: '', description: '', priority: 'medium', tag: 'バグ' });
       setShowForm(false);
       selectBug(data);
       onCountChange?.();
@@ -159,8 +163,9 @@ export default function BugBoardModal({ onClose, onCountChange }) {
   };
 
   const filteredBugs = bugs.filter(b => {
-    if (filter === 'unresolved') return b.status !== 'resolved';
-    if (filter === 'resolved') return b.status === 'resolved';
+    if (filter === 'unresolved' && b.status === 'resolved') return false;
+    if (filter === 'resolved' && b.status !== 'resolved') return false;
+    if (tagFilter !== 'all' && (b.tag ?? 'バグ') !== tagFilter) return false;
     return true;
   });
 
@@ -171,12 +176,20 @@ export default function BugBoardModal({ onClose, onCountChange }) {
 
           {/* ヘッダー */}
           <div className="px-5 py-3 border-b border-slate-200 flex items-center gap-3 shrink-0 flex-wrap">
-            <span className="text-base">🐛</span>
-            <h2 className="text-sm font-semibold text-slate-700">バグ報告掲示板</h2>
+            <span className="text-base">📋</span>
+            <h2 className="text-sm font-semibold text-slate-700">掲示板</h2>
             <div className="flex rounded border border-slate-200 overflow-hidden">
               {[['all','全て'],['unresolved','未解決'],['resolved','解決済み']].map(([v, l]) => (
                 <button key={v} onClick={() => setFilter(v)}
                   className={`px-2.5 py-1 text-xs transition-colors ${filter === v ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded border border-slate-200 overflow-hidden">
+              {[['all','全種類'], ...TAG_OPTIONS.map(t => [t, t])].map(([v, l]) => (
+                <button key={v} onClick={() => setTagFilter(v)}
+                  className={`px-2.5 py-1 text-xs transition-colors ${tagFilter === v ? 'bg-slate-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                   {l}
                 </button>
               ))}
@@ -215,6 +228,17 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                       className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-red-300" />
                   </div>
                   <div>
+                    <label className="text-[10px] font-medium text-slate-500 block mb-0.5">種類</label>
+                    <div className="flex gap-1.5">
+                      {TAG_OPTIONS.map(t => (
+                        <button key={t} onClick={() => setForm(p => ({ ...p, tag: t }))}
+                          className={`flex-1 text-xs py-1 rounded-lg border transition-colors ${form.tag === t ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
                     <label className="text-[10px] font-medium text-slate-500 block mb-0.5">優先度</label>
                     <div className="flex gap-1.5">
                       {[['low','低'],['medium','中'],['high','高']].map(([v, l]) => (
@@ -246,6 +270,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                         <button className="flex-1 text-left px-4 py-3 transition-colors min-w-0" onClick={() => selectBug(bug)}>
                           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_BADGE[bug.status]}`}>{STATUS_LABELS[bug.status]}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${TAG_COLORS[bug.tag ?? 'バグ'] ?? 'bg-slate-100 text-slate-600'}`}>{bug.tag ?? 'バグ'}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[bug.priority]}`}>{PRIORITY_LABELS[bug.priority]}優先</span>
                           </div>
                           <p className="text-xs font-medium text-slate-700 leading-snug truncate">{bug.title}</p>
@@ -283,6 +308,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                         </div>
                         <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[selectedBug.status]}`}>{STATUS_LABELS[selectedBug.status]}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[selectedBug.tag ?? 'バグ'] ?? 'bg-slate-100 text-slate-600'}`}>{selectedBug.tag ?? 'バグ'}</span>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[selectedBug.priority]}`}>{PRIORITY_LABELS[selectedBug.priority]}優先</span>
                         </div>
                       </div>
@@ -371,13 +397,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                     <textarea
                       value={commentText}
                       onChange={e => setCommentText(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          if (commentText.trim() && commentUser.trim()) addComment();
-                        }
-                      }}
-                      placeholder="コメントを入力（Enterで送信、Shift+Enterで改行）"
+                      placeholder="コメントを入力（ボタンで送信）"
                       rows={2}
                       className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
                     />
