@@ -4,6 +4,53 @@ import { supabase } from './supabaseClient';
 import ItemQuestionSection from './ItemQuestions';
 import { STATUSES, STATUS_MAP, FILTER_TABS, CURRENT_MONTH } from '../constants';
 
+// ── DescriptionBlock: Markdownライクなdescription表示 ────────────
+function MdLine({ text }) {
+  const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let last = 0;
+  let match;
+  regex.lastIndex = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(
+      <a key={match.index} href={match[2]} target="_blank" rel="noreferrer noopener"
+        className="text-indigo-500 underline hover:text-indigo-700 break-all">
+        {match[1]}
+      </a>
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
+function DescriptionBlock({ text }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return (
+    <div className="space-y-0.5">
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return (
+            <div key={i} className="flex gap-1.5 items-start">
+              <span className="text-slate-400 shrink-0 mt-0.5">•</span>
+              <span><MdLine text={trimmed.slice(2)} /></span>
+            </div>
+          );
+        }
+        if (/^#{1,3} /.test(trimmed)) {
+          const content = trimmed.replace(/^#{1,3} /, '');
+          return <p key={i} className="font-semibold mt-1"><MdLine text={content} /></p>;
+        }
+        return <p key={i}><MdLine text={trimmed} /></p>;
+      })}
+    </div>
+  );
+}
+
 // ── PeerEvidenceSection ──────────────────────────────────────────
 function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
   const [evidences, setEvidences] = useState([]);
@@ -199,7 +246,9 @@ function ItemDetail({
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
         {item.description && (
-          <p className="text-xs text-slate-500 bg-white rounded-xl p-3 border border-slate-200 whitespace-pre-wrap leading-relaxed">{item.description}</p>
+          <div className="text-xs text-slate-500 bg-white rounded-xl p-3 border border-slate-200 leading-relaxed">
+            <DescriptionBlock text={item.description} />
+          </div>
         )}
         <section>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">ステータス</p>
