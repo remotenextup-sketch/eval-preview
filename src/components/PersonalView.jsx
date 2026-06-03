@@ -97,10 +97,28 @@ function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
 }
 
 // ── ItemDetail ───────────────────────────────────────────────────
+function groupEvidences(evidences) {
+  const groups = [];
+  const seen = {};
+  for (const ev of evidences) {
+    if (ev.post_id) {
+      if (ev.post_id in seen) {
+        groups[seen[ev.post_id]].evidences.push(ev);
+      } else {
+        seen[ev.post_id] = groups.length;
+        groups.push({ key: ev.post_id, evidences: [ev] });
+      }
+    } else {
+      groups.push({ key: `solo-${ev.id}`, evidences: [ev] });
+    }
+  }
+  return groups;
+}
+
 function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
   onPost, isUploading,
-  onDeleteEvidence, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
+  onDeleteEvidence, onDeleteGroup, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
   selectedUser,
 }) {
   const [localMemo, setLocalMemo] = useState(item.memo ?? '');
@@ -211,57 +229,69 @@ function ItemDetail({
           </p>
           {evidences.length > 0 && (
             <div className="space-y-2 mb-3">
-              {evidences.map(ev => {
-                const isBad = ev.quality === 'bad';
-                const cs = commentStates[ev.id];
-                const ns = ngStates[ev.id];
+              {groupEvidences(evidences).map(group => {
+                const rep = group.evidences[0];
+                const images = group.evidences.filter(e => e.evidence_type === 'image');
+                const textEv = group.evidences.find(e => e.evidence_type === 'text');
+                const sharedComment = rep.comment ?? null;
+                const isBad = rep.quality === 'bad';
+                const cs = commentStates[rep.id];
+                const ns = ngStates[rep.id];
                 return (
-                  <div key={ev.id} className={`rounded-xl border p-3 ${isBad ? 'bg-red-50 border-red-100' : ev.quality === 'good' ? 'bg-green-50 border-green-100' : 'bg-white border-slate-200'}`}>
+                  <div key={group.key} className={`rounded-xl border p-3 ${isBad ? 'bg-red-50 border-red-100' : rep.quality === 'good' ? 'bg-green-50 border-green-100' : 'bg-white border-slate-200'}`}>
                     <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        {ev.evidence_type === 'image' ? (
-                          <a href={ev.content} target="_blank" rel="noreferrer">
-                            <img src={ev.content} alt="evidence" className="rounded-lg max-w-full object-cover" style={{ maxHeight: 200 }} />
-                          </a>
-                        ) : (
-                          <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {ev.content}</p>
+                      <div className="flex-1 min-w-0 space-y-2">
+                        {/* テキストエビデンス */}
+                        {textEv && (
+                          <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {textEv.content}</p>
                         )}
-                        {/* 既存コメント表示 */}
-                        {ev.comment && !cs?.open && (
-                          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                            💬 {ev.comment}
-                          </p>
+                        {/* 画像グリッド */}
+                        {images.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {images.map(img => (
+                              <a key={img.id} href={img.content} target="_blank" rel="noreferrer">
+                                <img src={img.content} alt="evidence"
+                                  className="w-20 h-20 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition-opacity" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {/* コメント */}
+                        {sharedComment && !cs?.open && (
+                          <p className="text-xs text-slate-500 leading-relaxed">💬 {sharedComment}</p>
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
                         <button
                           onClick={() => {
-                            onUpdateEvidenceQuality(ev.id, 'good');
-                            if (ns?.open) setNgStates(prev => ({ ...prev, [ev.id]: { open: false, draft: '', saving: false } }));
+                            onUpdateEvidenceQuality(rep.id, 'good');
+                            if (ns?.open) setNgStates(prev => ({ ...prev, [rep.id]: { open: false, draft: '', saving: false } }));
                             setPeerRefreshKey(k => k + 1);
                           }}
                           title="良い"
-                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${ev.quality === 'good' ? 'bg-green-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-green-50'}`}>👍</button>
+                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${rep.quality === 'good' ? 'bg-green-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-green-50'}`}>👍</button>
                         <button
-                          onClick={() => { toggleNg(ev.id, ev.ng_reason); setPeerRefreshKey(k => k + 1); }}
+                          onClick={() => { toggleNg(rep.id, rep.ng_reason); setPeerRefreshKey(k => k + 1); }}
                           title="やり直し"
                           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isBad ? 'bg-red-500 text-white' : ns?.open ? 'bg-red-200 text-red-700' : 'bg-white border border-slate-200 text-slate-400 hover:bg-red-50'}`}>👎</button>
                         <button
-                          onClick={() => toggleComment(ev.id, ev.comment)}
+                          onClick={() => toggleComment(rep.id, sharedComment)}
                           title={cs?.open ? 'キャンセル' : 'コメントを追加・編集'}
-                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${cs?.open ? 'bg-indigo-500 text-white' : ev.comment ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-indigo-50'}`}
+                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${cs?.open ? 'bg-indigo-500 text-white' : sharedComment ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-indigo-50'}`}
                         >💬</button>
-                        <button onClick={() => onDeleteEvidence(ev.id)} title="削除"
+                        <button
+                          onClick={() => onDeleteGroup(group.evidences.map(e => e.id))}
+                          title="削除"
                           className="text-xs px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">🗑</button>
                       </div>
                     </div>
-                    {/* やり直しバッジ（インライン編集中は非表示） */}
+                    {/* やり直しバッジ */}
                     {isBad && !ns?.open && (
                       <span
                         className="inline-block mt-1.5 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full cursor-pointer hover:bg-red-200"
-                        onClick={() => toggleNg(ev.id, ev.ng_reason)}
+                        onClick={() => toggleNg(rep.id, rep.ng_reason)}
                       >
-                        やり直し{ev.ng_reason ? `：${ev.ng_reason}` : '（理由を追加）'}
+                        やり直し{rep.ng_reason ? `：${rep.ng_reason}` : '（理由を追加）'}
                       </span>
                     )}
                     {/* NG理由インライン入力 */}
@@ -269,52 +299,42 @@ function ItemDetail({
                       <div className="mt-2 space-y-1.5">
                         <textarea
                           value={ns.draft}
-                          onChange={e => setNgStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], draft: e.target.value } }))}
+                          onChange={e => setNgStates(prev => ({ ...prev, [rep.id]: { ...prev[rep.id], draft: e.target.value } }))}
                           placeholder="やり直しの理由を入力（任意）"
                           rows={2}
                           autoFocus
                           className="w-full text-xs border border-red-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
                         />
                         <div className="flex gap-1.5">
-                          <button
-                            onClick={() => saveNg(ev.id)}
-                            disabled={ns.saving}
-                            className="text-xs px-2.5 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors"
-                          >
+                          <button onClick={() => saveNg(rep.id)} disabled={ns.saving}
+                            className="text-xs px-2.5 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors">
                             {ns.saving ? '保存中...' : 'やり直し確定'}
                           </button>
-                          <button
-                            onClick={() => setNgStates(prev => ({ ...prev, [ev.id]: { open: false, draft: '', saving: false } }))}
-                            className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
-                          >
+                          <button onClick={() => setNgStates(prev => ({ ...prev, [rep.id]: { open: false, draft: '', saving: false } }))}
+                            className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50">
                             キャンセル
                           </button>
                         </div>
                       </div>
                     )}
-                    {/* インラインコメント入力 */}
+                    {/* コメント編集 */}
                     {cs?.open && (
                       <div className="mt-2 space-y-1.5">
                         <textarea
                           value={cs.draft}
-                          onChange={e => setCommentStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], draft: e.target.value } }))}
+                          onChange={e => setCommentStates(prev => ({ ...prev, [rep.id]: { ...prev[rep.id], draft: e.target.value } }))}
                           placeholder="気づき・微妙だった点など"
                           rows={2}
                           autoFocus
                           className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
                         />
                         <div className="flex gap-1.5">
-                          <button
-                            onClick={() => saveComment(ev.id)}
-                            disabled={cs.saving}
-                            className="text-xs px-2.5 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-                          >
+                          <button onClick={() => saveComment(rep.id)} disabled={cs.saving}
+                            className="text-xs px-2.5 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors">
                             {cs.saving ? '保存中...' : '保存'}
                           </button>
-                          <button
-                            onClick={() => toggleComment(ev.id, ev.comment)}
-                            className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50"
-                          >
+                          <button onClick={() => toggleComment(rep.id, sharedComment)}
+                            className="text-xs px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50">
                             キャンセル
                           </button>
                         </div>

@@ -524,14 +524,16 @@ export default function EvaluationProgress() {
     setSelectedItem(prev => prev?.id === progressId ? updateEv(prev) : prev);
   }, []);
 
-  const addTextEvidence = async (progressId, text) => {
+  const addTextEvidence = async (progressId, text, postId = null) => {
     if (!text) return;
-    const { error } = await supabase.from('evaluation_evidences').insert({ progress_id: progressId, evidence_type: 'text', content: text });
+    const row = { progress_id: progressId, evidence_type: 'text', content: text };
+    if (postId) row.post_id = postId;
+    const { error } = await supabase.from('evaluation_evidences').insert(row);
     if (error) { console.error('[addTextEvidence] INSERT error:', error); return; }
     await loadEvidences(progressId);
   };
 
-  const uploadImages = async (progressId, files, comment = null) => {
+  const uploadImages = async (progressId, files, comment = null, postId = null) => {
     const fileList = Array.isArray(files) ? files : [files];
     setUploading(prev => ({ ...prev, [progressId]: true }));
     for (const file of fileList) {
@@ -542,6 +544,7 @@ export default function EvaluationProgress() {
       const { data: { publicUrl } } = supabase.storage.from('evidences').getPublicUrl(filePath);
       const row = { progress_id: progressId, evidence_type: 'image', content: publicUrl };
       if (comment) row.comment = comment;
+      if (postId) row.post_id = postId;
       const { error } = await supabase.from('evaluation_evidences').insert(row);
       if (error) console.error('[uploadImages] INSERT error:', error);
     }
@@ -551,11 +554,17 @@ export default function EvaluationProgress() {
 
   const post = async (progressId, text, files) => {
     const trimmed = text.trim();
+    const postId = crypto.randomUUID();
     if (files.length > 0) {
-      await uploadImages(progressId, files, trimmed || null);
+      await uploadImages(progressId, files, trimmed || null, postId);
     } else if (trimmed) {
-      await addTextEvidence(progressId, trimmed);
+      await addTextEvidence(progressId, trimmed, postId);
     }
+  };
+
+  const deleteEvidences = async (progressId, evidenceIds) => {
+    await Promise.all(evidenceIds.map(id => supabase.from('evaluation_evidences').delete().eq('id', id)));
+    await loadEvidences(progressId);
   };
 
   const deleteEvidence = async (progressId, evidenceId) => {
@@ -717,6 +726,7 @@ export default function EvaluationProgress() {
     onPost: (text, files) => post(selectedItem.id, text, files),
     isUploading: uploading[selectedItem.id] ?? false,
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
+    onDeleteGroup: ids => deleteEvidences(selectedItem.id, ids),
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality, selectedItem.item_no, selectedUser?.progress_name ?? selectedUser?.name),
     onUpdateEvidenceComment: (evidenceId, comment) => updateEvidenceComment(selectedItem.id, evidenceId, comment),
     onSaveBadQuality: (evidenceId, ngReason) => saveBadQuality(selectedItem.id, evidenceId, ngReason),
