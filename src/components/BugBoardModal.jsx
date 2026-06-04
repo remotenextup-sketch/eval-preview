@@ -95,6 +95,44 @@ export default function BugBoardModal({ onClose, onCountChange }) {
     setAddingComment(false);
   };
 
+  const resolveWithNotification = async () => {
+    if (!commentText.trim() || !commentUser.trim() || !selectedBug) return;
+    setAddingComment(true);
+
+    // 1. コメント投稿
+    const { data: commentData, error: commentErr } = await supabase.from('bug_comments')
+      .insert({ bug_id: selectedBug.id, user_name: commentUser.trim(), content: commentText.trim() })
+      .select().single();
+    if (commentErr) {
+      console.error('[BugBoard] resolveWithNotification comment error:', commentErr);
+      setAddingComment(false);
+      return;
+    }
+    if (commentData) setComments(prev => [...prev, commentData]);
+
+    // 2. ステータスを解決済みに変更
+    await updateStatus(selectedBug.id, 'resolved');
+
+    setCommentText('');
+
+    // 3. Chatwork通知（失敗しても解決処理はエラーにしない）
+    try {
+      await fetch('/api/notify-chatwork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: selectedBug.title,
+          resolvedBy: commentUser.trim(),
+          comment: commentData.content,
+        }),
+      });
+    } catch (err) {
+      console.warn('[BugBoard] Chatwork notification failed (non-fatal):', err);
+    }
+
+    setAddingComment(false);
+  };
+
   const updateStatus = async (bugId, status) => {
     setDbError('');
     const { error } = await supabase.from('bug_reports')
@@ -401,11 +439,20 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                       rows={2}
                       className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
                     />
-                    <button onClick={addComment}
-                      disabled={addingComment || !commentText.trim() || !commentUser.trim()}
-                      className="w-full text-xs py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium transition-colors">
-                      {addingComment ? '送信中...' : 'コメントを送信'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={addComment}
+                        disabled={addingComment || !commentText.trim() || !commentUser.trim()}
+                        className="flex-1 text-xs py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium transition-colors">
+                        {addingComment ? '送信中...' : 'コメントを送信'}
+                      </button>
+                      {selectedBug?.status !== 'resolved' && (
+                        <button onClick={resolveWithNotification}
+                          disabled={addingComment || !commentText.trim() || !commentUser.trim()}
+                          className="flex-1 text-xs py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 font-medium transition-colors">
+                          {addingComment ? '処理中...' : '✅ 解決して通知'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </>
               ) : (
