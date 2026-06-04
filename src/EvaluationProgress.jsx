@@ -267,7 +267,13 @@ export default function EvaluationProgress() {
       }
     }
 
-    setItems(merged);
+    // 【廃止】【削除】を含む項目は達成済み(completed)の場合のみ表示
+    const isDeprecated = name => /【廃止】|【削除】/.test(name ?? '');
+    const visibleItems = merged.filter(item =>
+      !isDeprecated(item.item_name) || item.status === 'completed'
+    );
+
+    setItems(visibleItems);
     setLoading(false);
   }, [selectedUser]);
 
