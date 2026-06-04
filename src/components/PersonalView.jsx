@@ -1012,14 +1012,20 @@ function ListPane({
                 // 計画月バッジ（完了済みは非表示）
                 const planMonth = item.status !== 'completed' ? nearestPlanMonth[item.item_def_id] : null;
                 const planMM    = planMonth?.slice(5); // '06' etc
+                const hasRedo   = evidences.some(e => e.quality === 'bad');
                 return (
                   <div key={item.id} onClick={() => onItemClick(item)}
-                    className={`px-4 py-3 cursor-pointer flex items-start gap-2 border-l-4 transition-colors ${st.border} ${isActive ? 'bg-indigo-50' : `${st.bg} hover:brightness-95`}`}>
+                    className={`px-4 py-3 cursor-pointer flex items-start gap-2 border-l-4 transition-colors ${hasRedo ? 'border-l-orange-400' : st.border} ${isActive ? 'bg-indigo-50' : hasRedo ? 'bg-orange-50 hover:brightness-95' : `${st.bg} hover:brightness-95`}`}>
                     <span className="text-xs text-slate-400 w-8 shrink-0 pt-0.5">#{item.item_no}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-slate-800 leading-snug">{item.item_name}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.badge}`}>{st.label}</span>
+                        {hasRedo && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                            ⚠️ 要やり直し
+                          </span>
+                        )}
                         {planMonth && planMM && (
                           <span
                             className="text-xs px-1.5 py-0.5 rounded-full font-medium text-slate-700"
