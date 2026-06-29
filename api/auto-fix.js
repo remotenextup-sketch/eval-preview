@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -23,6 +25,18 @@ const AVAILABLE_FILES = [
   'src/components/SurveyModal.jsx',
   'src/components/SurveyView.jsx',
 ];
+
+// Edge Runtime has no Buffer — use Web APIs for base64
+function base64Decode(str) {
+  return atob(str.replace(/\n/g, ''));
+}
+
+function base64Encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
 
 async function notifyChatwork(message) {
   if (!CHATWORK_API_TOKEN || !CHATWORK_ROOM_ID) return;
@@ -56,7 +70,7 @@ async function fetchSpecificFiles(paths) {
         return {
           path,
           sha: data.sha,
-          content: Buffer.from(data.content, 'base64').toString('utf-8'),
+          content: base64Decode(data.content),
         };
       } catch {
         return null;
@@ -78,7 +92,7 @@ function callClaude(prompt) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 512,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -187,7 +201,7 @@ ${filesText}
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+      max_tokens: 8000,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -241,7 +255,7 @@ async function createGitHubPR(changes, report, sourceFiles) {
         },
         body: JSON.stringify({
           message: `fix: ${report.title}`,
-          content: Buffer.from(change.content).toString('base64'),
+          content: base64Encode(change.content),
           branch: branchName,
           ...(existing ? { sha: existing.sha } : {}),
         }),
@@ -298,27 +312,24 @@ async function mergeGitHubPR(prNumber) {
   }
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+export default async function handler(request, context) {
+  if (request.method !== 'POST') return new Response(null, { status: 405 });
 
   // Verify webhook secret
   if (AUTO_FIX_WEBHOOK_SECRET) {
-    const auth = req.headers['authorization'];
-    if (auth !== `Bearer ${AUTO_FIX_WEBHOOK_SECRET}`) return res.status(401).end();
+    const auth = request.headers.get('authorization');
+    if (auth !== `Bearer ${AUTO_FIX_WEBHOOK_SECRET}`) return new Response(null, { status: 401 });
   }
 
-  const payload = req.body ?? {};
+  const payload = await request.json().catch(() => ({}));
 
-  if (payload.type !== 'INSERT') return res.status(200).end();
+  if (payload.type !== 'INSERT') return new Response(null, { status: 200 });
 
   const report = payload.record;
-  if (!report?.title || !report?.description) return res.status(400).end();
+  if (!report?.title || !report?.description) return new Response(null, { status: 400 });
 
-  // Return 200 immediately so Supabase doesn't retry on timeout
-  res.status(200).end();
-
-  // Process in background — runs after the response is flushed
-  (async () => {
+  // waitUntil keeps the Edge function alive until the promise resolves
+  context.waitUntil((async () => {
     console.log(`[auto-fix] report="${report.title}" id=${report.id}`);
     try {
       // ── Step 1: classify and identify relevant files (lightweight, no code) ──
@@ -402,5 +413,7 @@ export default async function handler(req, res) {
         `[/info]`
       );
     }
-  })();
+  })());
+
+  return new Response('ok', { status: 200 });
 }
