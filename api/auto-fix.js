@@ -92,15 +92,20 @@ function callClaude(prompt) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 512,
+      max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
 }
 
 function parseClaudeJson(text) {
-  const jsonStr = text.trim().replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim();
-  return JSON.parse(jsonStr);
+  try {
+    const jsonStr = text.trim().replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim();
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    console.error('[auto-fix] JSON parse failed. raw text:', text);
+    throw new Error(`JSON parse failed: ${e.message}`);
+  }
 }
 
 // Step 1: Classify the report and identify which files need to change (no code sent)
@@ -154,7 +159,12 @@ ${fileList}
     throw new Error(`Claude API error ${res.status}: ${err}`);
   }
   const data = await res.json();
-  return parseClaudeJson(data.content[0].text);
+  try {
+    return parseClaudeJson(data.content[0].text);
+  } catch {
+    // Treat parse failures as complex so the handler falls through to manual notification
+    return { category: 'complex', files: [] };
+  }
 }
 
 // Step 2: Generate fix using only the identified files
@@ -201,7 +211,7 @@ ${filesText}
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
+      max_tokens: 16000,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -211,7 +221,12 @@ ${filesText}
     throw new Error(`Claude API error ${res.status}: ${err}`);
   }
   const data = await res.json();
-  return parseClaudeJson(data.content[0].text);
+  try {
+    return parseClaudeJson(data.content[0].text);
+  } catch {
+    // Treat parse failures as no changes so the handler sends a manual notification
+    return { summary: '', changes: [] };
+  }
 }
 
 async function createGitHubPR(changes, report, sourceFiles) {
