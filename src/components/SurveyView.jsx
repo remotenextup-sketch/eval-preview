@@ -287,7 +287,7 @@ export default function SurveyView({ selectedUser, users }) {
     return { month: latestMonth, respondedIds };
   })();
 
-  /* ═══════════════ RENDER ═══════════════ */
+  /* ────────────────── RENDER ────────────────── */
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
 
@@ -381,7 +381,7 @@ export default function SurveyView({ selectedUser, users }) {
                   </div>
                 ))}
 
-                {/* 未回答サーベイ – 回答フォーム */}
+                {/* 未回答サーベイ → 回答フォーム */}
                 {currentSurvey && (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-slate-100 bg-indigo-50">
@@ -409,9 +409,9 @@ export default function SurveyView({ selectedUser, users }) {
                             <textarea
                               value={answers[q.id] ?? ''}
                               onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
-                              rows={3}
+                              rows={4}
                               placeholder="自由に記入してください"
-                              className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                              className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y whitespace-pre-wrap"
                             />
                           )}
                         </div>
