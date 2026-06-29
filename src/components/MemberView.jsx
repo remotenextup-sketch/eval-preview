@@ -3,13 +3,22 @@ import { supabase } from './supabaseClient';
 import { RANK_OPTIONS, EMPTY_MEMBER_FORM, DEFAULT_DEPARTMENTS } from '../constants';
 
 const RANK_PERIOD_DEFS = [
-  { label: 'オンボーディング', from: 'onboarding_at',  to: 'trainee_at'    },
-  { label: 'トレーニー',       from: 'trainee_at',     to: 'partner_at'    },
-  { label: 'パートナー',       from: 'partner_at',     to: 'leader_at'     },
-  { label: 'リーダー',         from: 'leader_at',      to: 'specialist_at' },
-  { label: 'スペシャリスト',   from: 'specialist_at',  to: 'director_at'   },
-  { label: 'ディレクター',     from: 'director_at',    to: null            },
+  { label: 'オンボーディング', from: 'onboarding_at',  to: 'trainee_at',    rankValue: null },
+  { label: 'トレーニー',       from: 'trainee_at',     to: 'partner_at',    rankValue: 'トレーニー' },
+  { label: 'パートナー',       from: 'partner_at',     to: 'leader_at',     rankValue: 'パートナー' },
+  { label: 'リーダー',         from: 'leader_at',      to: 'specialist_at', rankValue: 'リーダー' },
+  { label: 'スペシャリスト',   from: 'specialist_at',  to: 'director_at',   rankValue: 'スペシャリスト' },
+  { label: 'ディレクター',     from: 'director_at',    to: null,            rankValue: 'ディレクター' },
 ];
+
+// ランク名からRankPeriodDefのインデックスを取得
+const RANK_DEF_INDEX = {
+  'トレーニー': 1,
+  'パートナー': 2,
+  'リーダー': 3,
+  'スペシャリスト': 4,
+  'ディレクター': 5,
+};
 
 function formatYM(dateStr) {
   if (!dateStr) return '';
@@ -37,20 +46,45 @@ function AvatarCircle({ name, avatarUrl, size = 'md' }) {
 }
 
 function RankPeriods({ user }) {
+  const currentRankDefIndex = user.rank ? (RANK_DEF_INDEX[user.rank] ?? null) : null;
+
   const periods = RANK_PERIOD_DEFS
-    .map(def => {
+    .map((def, idx) => {
       const fromDate = user[def.from];
       if (!fromDate) return null;
-      const toDate = def.to ? user[def.to] : null;
-      return { label: def.label, fromYM: formatYM(fromDate), toYM: toDate ? formatYM(toDate) : null, days: toDate ? calcDays(fromDate, toDate) : null };
+
+      // このランク期間が現在のランクに対応するかどうかを判定
+      // currentRankDefIndex が null の場合はフォールバックとして toDate がない場合を継続中とする
+      const isCurrentRank = currentRankDefIndex !== null ? idx === currentRankDefIndex : false;
+
+      // toDateの取得: 現在のランクに対応する期間はtoDateをnullとして継続中にする
+      let toDate;
+      if (isCurrentRank) {
+        toDate = null;
+      } else if (def.to) {
+        toDate = user[def.to] || null;
+      } else {
+        toDate = null;
+      }
+
+      return {
+        label: def.label,
+        fromYM: formatYM(fromDate),
+        toYM: toDate ? formatYM(toDate) : null,
+        days: toDate ? calcDays(fromDate, toDate) : null,
+        isCurrentRank,
+      };
     })
     .filter(Boolean);
+
   if (!periods.length) return <p className="text-xs text-slate-400">期間データなし</p>;
   return (
     <div className="space-y-1">
       {periods.map(p => (
         <div key={p.label} className="flex items-baseline gap-1.5 text-xs">
-          <span className="text-slate-500 font-medium w-24 shrink-0">{p.label}:</span>
+          <span className={`font-medium w-24 shrink-0 ${p.isCurrentRank ? 'text-indigo-600' : 'text-slate-500'}`}>
+            {p.label}{p.isCurrentRank ? ' ★' : ''}:
+          </span>
           <span className="text-slate-700">
             {p.fromYM}〜{p.toYM ?? '現在（継続中）'}
             {p.days != null && <span className="text-slate-400 ml-1">（{p.days}日）</span>}
@@ -59,6 +93,18 @@ function RankPeriods({ user }) {
       ))}
     </div>
   );
+}
+
+// ランク変更時に対応する昇格日時カラムを返す
+function getRankDateColumn(rank) {
+  const map = {
+    'トレーニー': 'trainee_at',
+    'パートナー': 'partner_at',
+    'リーダー': 'leader_at',
+    'スペシャリスト': 'specialist_at',
+    'ディレクター': 'director_at',
+  };
+  return map[rank] ?? null;
 }
 
 export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTIONS }) {
@@ -142,7 +188,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       is_anonymized: false,
     });
     if (error) {
-      setToast({ type: 'error', message: `登録に失敗しました：${error.message}` });
+      setToast({ type: 'error', message: `登録に失敗しました（${error.message}）` });
     } else {
       await fetchData();
       onUsersRefresh();
@@ -171,6 +217,15 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     if (editForm.mall !== undefined) changes.mall = editForm.mall.trim() || null;
     if (editForm.birth_year !== undefined) changes.birth_year = editForm.birth_year ? parseInt(editForm.birth_year) : null;
     if (editForm.avatar_url !== undefined) changes.avatar_url = editForm.avatar_url || null;
+
+    // ランクが変更された場合、対応する昇格日時カラムを現在日時でセット
+    if (changes.rank && changes.rank !== editTarget.rank) {
+      const rankDateCol = getRankDateColumn(changes.rank);
+      if (rankDateCol && !editTarget[rankDateCol]) {
+        // 昇格日時が未設定の場合のみ今日の日付をセット
+        changes[rankDateCol] = new Date().toISOString().slice(0, 10);
+      }
+    }
 
     const { error } = await supabase.from('users').update(changes).eq('id', editTarget.id);
     if (error) { console.error('メンバー編集エラー:', error); setSavingEdit(false); return; }
@@ -205,7 +260,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     }
     const { error } = await supabase.from('users').delete().eq('id', deleteTarget.id);
     if (error) {
-      setToast({ type: 'error', message: `削除に失敗しました：${error.message}` });
+      setToast({ type: 'error', message: `削除に失敗しました（${error.message}）` });
     } else {
       await fetchData();
       onUsersRefresh();
@@ -382,7 +437,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-semibold text-slate-700">メンバー追加</h3>
-              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">✕</button>
+              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
             </div>
             <div className="overflow-y-auto p-5 space-y-3 flex-1">
               {[
@@ -453,7 +508,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                 <input type="date" value={retireDate} onChange={e => setRetireDate(e.target.value)}
                   className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
-              <p className="text-xs text-slate-400">退職後はヘッダーのユーザー選択から除外されます。</p>
+              <p className="text-xs text-slate-400">退職後は、ヘッダーのユーザー選択から除外されます。</p>
             </div>
             <div className="px-5 py-4 border-t border-slate-200 flex gap-2">
               <button onClick={handleRetire} disabled={retiring || !retireDate}
@@ -472,7 +527,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="text-sm font-semibold text-slate-700">編集: {editTarget.name}</h3>
-              <button onClick={() => setEditTarget(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">✕</button>
+              <button onClick={() => setEditTarget(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4">
               {/* 顔写真 */}
@@ -499,7 +554,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                   {availableRanks.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
                 {editForm.rank && editForm.rank !== editTarget.rank && (
-                  <p className="text-xs text-amber-600 mt-1">※ ランク変更後、新しいランクの評価項目が自動追加されます</p>
+                  <p className="text-xs text-amber-600 mt-1">※ ランク変更後、新しいランクの評価項目が自動追加されます。また昇格日時が未設定の場合は本日の日付が記録されます。</p>
                 )}
               </div>
               {/* 部署 */}
@@ -549,7 +604,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
               <p className="text-sm text-slate-700">
                 <span className="font-semibold">{deleteTarget.name}</span>さんのデータを完全に削除します。この操作は取り消せません。
               </p>
-              <p className="text-xs text-slate-400">評価進捗・エビデンスも含めてすべて削除されます。</p>
+              <p className="text-xs text-slate-400">評価進捗・エビデンスを含めて全て削除されます。</p>
             </div>
             <div className="px-5 py-4 border-t border-slate-200 flex gap-2">
               <button onClick={handleDelete} disabled={deleting}
