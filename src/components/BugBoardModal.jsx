@@ -171,7 +171,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
     const { type, id, user_name } = confirmDelete;
 
     if (!isAdmin && deleteNameInput.trim() !== user_name) {
-      setDeleteError('投稿者名が一致しません');
+      setDeleteError('投稿者名が一致しません。');
       return;
     }
 
@@ -325,7 +325,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
               </div>
             </div>
 
-            {/* 右ペイン：詳細＋コメント */}
+            {/* 右ペイン：詳細・コメント */}
             <div className="flex-1 flex flex-col overflow-hidden min-w-0">
               {selectedBug ? (
                 <>
@@ -449,7 +449,7 @@ export default function BugBoardModal({ onClose, onCountChange }) {
                         <button onClick={resolveWithNotification}
                           disabled={addingComment || !commentText.trim() || !commentUser.trim()}
                           className="flex-1 text-xs py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 font-medium transition-colors">
-                          {addingComment ? '処理中...' : '✅ 解決して通知'}
+                          {addingComment ? '処理中...' : '✓ 解決して通知'}
                         </button>
                       )}
                     </div>
