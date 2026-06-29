@@ -5,8 +5,8 @@ const AUTO_FIX_WEBHOOK_SECRET = process.env.AUTO_FIX_WEBHOOK_SECRET;
 const CHATWORK_API_TOKEN = process.env.CHATWORK_API_TOKEN;
 const CHATWORK_ROOM_ID = process.env.CHATWORK_ROOM_ID;
 
-// UI and logic source files to give Claude as context
-const SOURCE_FILES = [
+// Complete list of files Claude can choose from in Step 1
+const AVAILABLE_FILES = [
   'src/App.jsx',
   'src/constants.js',
   'src/EvaluationProgress.jsx',
@@ -40,12 +40,12 @@ async function notifyChatwork(message) {
   }
 }
 
-async function fetchSourceFiles() {
+async function fetchSpecificFiles(paths) {
   if (!GITHUB_TOKEN || !GITHUB_REPO) throw new Error('GITHUB_TOKEN or GITHUB_REPO not configured');
   const [owner, repo] = GITHUB_REPO.split('/');
 
   const results = await Promise.all(
-    SOURCE_FILES.map(async (path) => {
+    paths.map(async (path) => {
       try {
         const res = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
@@ -67,15 +67,34 @@ async function fetchSourceFiles() {
   return results.filter(Boolean);
 }
 
-async function analyzeWithClaude(report, sourceFiles) {
+function callClaude(prompt) {
   if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+  return fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+}
 
-  const filesText = sourceFiles
-    .map(f => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``)
-    .join('\n\n');
+function parseClaudeJson(text) {
+  const jsonStr = text.trim().replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim();
+  return JSON.parse(jsonStr);
+}
+
+// Step 1: Classify the report and identify which files need to change (no code sent)
+async function classifyReport(report) {
+  const fileList = AVAILABLE_FILES.join('\n');
 
   const prompt = `あなたはReactアプリケーションの自動修正エンジニアです。
-バグ報告・改善要望を分析し、修正案をJSON形式で返してください。
+バグ報告・改善要望を読んで、分類と修正対象ファイルをJSONで返してください。
 
 ## バグ報告・改善要望
 タイトル：${report.title}
@@ -84,12 +103,10 @@ async function analyzeWithClaude(report, sourceFiles) {
 優先度：${report.priority ?? '中'}
 説明：${report.description}
 
-## ソースコード
-${filesText}
+## 修正可能なファイル一覧
+${fileList}
 
 ## 分類基準
-以下の基準でcategoryを決めてください：
-
 **ui**（自動対応：PR作成＋自動マージ）
 - 文言・ラベルの変更
 - 表示されない・見えない要素の修正
@@ -109,19 +126,56 @@ ${filesText}
 ## 回答形式（JSONのみ・コードブロック不要）
 {
   "category": "ui" | "db" | "complex",
+  "files": ["src/components/BugBoardModal.jsx"]
+}
+
+注意：
+- filesは上記ファイル一覧から最大3つ選ぶ（パスを正確に記載）
+- categoryがcomplexの場合、filesは []
+- JSONのみ返し、前後に説明文を入れない`;
+
+  const res = await callClaude(prompt);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Claude API error ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  return parseClaudeJson(data.content[0].text);
+}
+
+// Step 2: Generate fix using only the identified files
+async function generateFix(report, sourceFiles) {
+  const filesText = sourceFiles
+    .map(f => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``)
+    .join('\n\n');
+
+  const prompt = `あなたはReactアプリケーションの自動修正エンジニアです。
+バグ報告・改善要望に基づき、修正内容をJSON形式で返してください。
+
+## バグ報告・改善要望
+タイトル：${report.title}
+投稿者：${report.user_name}
+種類：${report.tag ?? '未分類'}
+優先度：${report.priority ?? '中'}
+説明：${report.description}
+
+## 修正対象ファイル
+${filesText}
+
+## 回答形式（JSONのみ・コードブロック不要）
+{
   "summary": "修正内容の1〜2行の要約（日本語）",
   "changes": [
     {
-      "path": "変更するファイルのパス（例: src/components/Header.jsx）",
-      "content": "変更後のファイル全体の内容（文字列・差分ではなく完全なファイル）"
+      "path": "変更するファイルのパス",
+      "content": "変更後のファイル全体の内容（差分ではなく完全なファイル）"
     }
   ]
 }
 
 注意：
-- categoryがcomplexの場合、changesは空配列 []
 - contentは変更後のファイル全体を含める
-- 確実に修正できる場合のみchangesを含め、不確かな場合はcomplexにする
+- 確実に修正できる場合のみchangesを含め、不確かな場合はchangesを []
 - JSONのみ返し、前後に説明文を入れない`;
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -142,13 +196,8 @@ ${filesText}
     const err = await res.text();
     throw new Error(`Claude API error ${res.status}: ${err}`);
   }
-
   const data = await res.json();
-  const raw = data.content[0].text.trim();
-
-  // Strip markdown code fences if Claude wraps the JSON
-  const jsonStr = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim();
-  return JSON.parse(jsonStr);
+  return parseClaudeJson(data.content[0].text);
 }
 
 async function createGitHubPR(changes, report, sourceFiles) {
@@ -178,7 +227,7 @@ async function createGitHubPR(changes, report, sourceFiles) {
   );
   if (!branchRes.ok) throw new Error(`create branch failed: ${branchRes.status}`);
 
-  // Commit each changed file sequentially (GitHub API requires the previous commit's file SHA)
+  // Commit each changed file sequentially (each PUT needs the current file's SHA)
   for (const change of changes) {
     const existing = sourceFiles.find(f => f.path === change.path);
     const putRes = await fetch(
@@ -277,14 +326,11 @@ export default async function handler(req, res) {
   console.log(`[auto-fix] report="${report.title}" id=${report.id}`);
 
   try {
-    const sourceFiles = await fetchSourceFiles();
-    console.log(`[auto-fix] fetched ${sourceFiles.length} files`);
+    // ── Step 1: classify and identify relevant files (lightweight, no code) ──
+    const { category, files } = await classifyReport(report);
+    console.log(`[auto-fix] step1 category=${category} files=${files?.join(',')}`);
 
-    const analysis = await analyzeWithClaude(report, sourceFiles);
-    console.log(`[auto-fix] category=${analysis.category} changes=${analysis.changes?.length ?? 0}`);
-
-    // ── complex: manual handling ──────────────────────────────────────────────
-    if (analysis.category === 'complex') {
+    if (category === 'complex') {
       await notifyChatwork(
         `[info][title]⚠️ 手動対応が必要な要望が届きました[/title]\n` +
         `件名：${report.title}\n` +
@@ -295,8 +341,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'notified_manual' });
     }
 
-    // No actionable changes generated
-    if (!analysis.changes?.length) {
+    if (!files?.length) {
+      await notifyChatwork(
+        `[info][title]⚠️ 修正対象ファイルが特定できませんでした[/title]\n` +
+        `件名：${report.title}\n` +
+        `手動での確認をお願いします。\n` +
+        `[/info]`
+      );
+      return res.status(200).json({ status: 'no_files', category });
+    }
+
+    // Validate paths to prevent hallucinated files outside the known list
+    const validFiles = files.filter(f => AVAILABLE_FILES.includes(f));
+
+    // ── Step 2: fetch only the identified files, then generate fix ────────────
+    const sourceFiles = await fetchSpecificFiles(validFiles);
+    console.log(`[auto-fix] step2 fetched ${sourceFiles.length}/${validFiles.length} files`);
+
+    const { summary, changes } = await generateFix(report, sourceFiles);
+    console.log(`[auto-fix] changes=${changes?.length ?? 0}`);
+
+    if (!changes?.length) {
       await notifyChatwork(
         `[info][title]⚠️ 自動修正案が生成できませんでした[/title]\n` +
         `件名：${report.title}\n` +
@@ -304,21 +369,21 @@ export default async function handler(req, res) {
         `手動での確認をお願いします。\n` +
         `[/info]`
       );
-      return res.status(200).json({ status: 'no_changes', category: analysis.category });
+      return res.status(200).json({ status: 'no_changes', category });
     }
 
     // Create PR
-    const pr = await createGitHubPR(analysis.changes, report, sourceFiles);
+    const pr = await createGitHubPR(changes, report, sourceFiles);
     console.log(`[auto-fix] PR #${pr.number} created: ${pr.html_url}`);
 
     // ── ui: auto-merge ────────────────────────────────────────────────────────
-    if (analysis.category === 'ui') {
+    if (category === 'ui') {
       await mergeGitHubPR(pr.number);
       console.log(`[auto-fix] PR #${pr.number} auto-merged`);
       await notifyChatwork(
         `[info][title]✅ 自動修正が完了しました[/title]\n` +
         `要望：${report.title}\n` +
-        `修正内容：${analysis.summary}\n` +
+        `修正内容：${summary}\n` +
         `PR：${pr.html_url}\n` +
         `[/info]`
       );
@@ -329,7 +394,7 @@ export default async function handler(req, res) {
     await notifyChatwork(
       `[info][title]🔧 PRが作成されました。確認をお願いします[/title]\n` +
       `要望：${report.title}\n` +
-      `修正内容：${analysis.summary}\n` +
+      `修正内容：${summary}\n` +
       `PR URL：${pr.html_url}\n` +
       `[/info]`
     );
