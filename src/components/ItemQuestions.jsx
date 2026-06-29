@@ -81,16 +81,21 @@ export default function ItemQuestionSection({ itemId, itemName, selectedUser }) 
   const [saving, setSaving]       = useState(false);
   const [expanded, setExpanded]   = useState({});
 
-  const loadQuestions = async () => {
-    if (!itemId) return;
+  const loadQuestions = async (id) => {
+    if (!id) return;
     setLoading(true);
-    const { data } = await supabase.from('item_questions').select('*').eq('item_id', itemId)
+    const { data } = await supabase.from('item_questions').select('*').eq('item_id', id)
       .order('created_at', { ascending: false });
     setQuestions(data || []);
     setLoading(false);
   };
 
-  useEffect(() => { loadQuestions(); }, [itemId]);
+  useEffect(() => {
+    setQuestions([]);
+    setExpanded({});
+    setQuestionText('');
+    loadQuestions(itemId);
+  }, [itemId]);
 
   const submitQuestion = async () => {
     const userName = selectedUser?.name ?? '';
@@ -98,7 +103,7 @@ export default function ItemQuestionSection({ itemId, itemName, selectedUser }) 
     setSaving(true);
     const { error } = await supabase.from('item_questions')
       .insert({ item_id: itemId, user_name: userName, question: questionText.trim(), status: 'open' });
-    if (!error) { setQuestionText(''); await loadQuestions(); }
+    if (!error) { setQuestionText(''); await loadQuestions(itemId); }
     setSaving(false);
   };
 
