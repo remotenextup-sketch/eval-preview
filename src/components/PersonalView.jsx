@@ -226,6 +226,12 @@ function ItemDetail({
     setPosting(false);
   }, [item.id]);
 
+  // Reset UI states so previous item's data never leaks into the next item
+  useEffect(() => {
+    setCommentStates({});
+    setNgStates({});
+  }, [item.id]);
+
   const handleMemoChange = val => {
     setLocalMemo(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1177,7 +1183,7 @@ export default function PersonalView({
             <MyQuestionsPanel selectedUser={selectedUser} />
           ) : selectedItem && detailProps && !showPlanView ? (
             <>
-              <ItemDetail {...detailProps} onBack={null} />
+              <ItemDetail key={selectedItem?.id} {...detailProps} onBack={null} />
               {showPersonalChart && <ChartModal {...chartProps} onClose={() => setShowPersonalChart(false)} />}
             </>
           ) : showPlanView ? (
@@ -1204,7 +1210,7 @@ export default function PersonalView({
             <GanttPanel {...ganttPanelProps} />
           ) : selectedItem && detailProps ? (
             <>
-              <ItemDetail {...detailProps} onBack={() => setMobileShowDetail(false)} />
+              <ItemDetail key={selectedItem?.id} {...detailProps} onBack={() => setMobileShowDetail(false)} />
               {showPersonalChart && <ChartModal {...chartProps} onClose={() => setShowPersonalChart(false)} />}
             </>
           ) : <div className="flex items-center justify-center h-full text-slate-400 text-sm">← 項目を選択してください</div>}
