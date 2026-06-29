@@ -30,6 +30,9 @@ export default function BugBoardModal({ onClose, onCountChange }) {
   const [commentText, setCommentText] = useState('');
   const [addingComment, setAddingComment]   = useState(false);
 
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult]   = useState('');
+
   // 削除確認
   const [confirmDelete, setConfirmDelete]   = useState(null); // { type:'bug'|'comment', id, user_name, label }
   const [deleteNameInput, setDeleteNameInput] = useState('');
@@ -37,6 +40,24 @@ export default function BugBoardModal({ onClose, onCountChange }) {
   const [deleteError, setDeleteError]       = useState('');
 
   useEffect(() => { fetchBugs(); }, []);
+
+  const handleBulkConsult = async () => {
+    const openBugs = bugs.filter(b => b.status === 'open');
+    if (!openBugs.length) { setBulkResult('未解決案件がありません'); return; }
+    setBulkLoading(true);
+    setBulkResult('');
+    try {
+      await fetch('/api/bulk-consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bugs: openBugs }),
+      });
+      setBulkResult('✅ チャットワークにAI分析レポートを送信しました');
+    } catch {
+      setBulkResult('❌ 送信に失敗しました');
+    }
+    setBulkLoading(false);
+  };
 
   const fetchBugs = async () => {
     setLoading(true);
@@ -233,6 +254,17 @@ export default function BugBoardModal({ onClose, onCountChange }) {
               ))}
             </div>
             {isAdmin && <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">管理者モード</span>}
+            {isAdmin && (
+              <button
+                onClick={handleBulkConsult}
+                disabled={bulkLoading}
+                className="text-xs px-3 py-1 rounded-lg font-medium transition-colors bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50">
+                {bulkLoading ? '分析中...' : '🤖 未対応案件をAIに相談'}
+              </button>
+            )}
+            {bulkResult && (
+              <span className="text-xs text-slate-500">{bulkResult}</span>
+            )}
             <button
               onClick={() => setShowForm(v => !v)}
               className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ml-auto ${showForm ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-red-500 text-white hover:bg-red-600'}`}>
