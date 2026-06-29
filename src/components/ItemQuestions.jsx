@@ -74,7 +74,7 @@ function QuestionItem({ q, onAnswer, onDelete, expanded, setExpanded }) {
   );
 }
 
-export default function ItemQuestionSection({ itemId, itemName, selectedUser }) {
+export default function ItemQuestionSection({ itemId, itemName, selectedUser, onQuestionCountChange }) {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading]     = useState(false);
   const [questionText, setQuestionText] = useState('');
@@ -86,7 +86,9 @@ export default function ItemQuestionSection({ itemId, itemName, selectedUser }) 
     setLoading(true);
     const { data } = await supabase.from('item_questions').select('*').eq('item_id', id)
       .order('created_at', { ascending: false });
-    setQuestions(data || []);
+    const list = data || [];
+    setQuestions(list);
+    if (onQuestionCountChange) onQuestionCountChange(id, list.length);
     setLoading(false);
   };
 
@@ -115,7 +117,9 @@ export default function ItemQuestionSection({ itemId, itemName, selectedUser }) 
 
   const deleteQuestion = async (qId) => {
     await supabase.from('item_questions').delete().eq('id', qId);
-    setQuestions(prev => prev.filter(q => q.id !== qId));
+    const next = questions.filter(q => q.id !== qId);
+    setQuestions(next);
+    if (onQuestionCountChange) onQuestionCountChange(itemId, next.length);
   };
 
   if (!itemId) return null;
