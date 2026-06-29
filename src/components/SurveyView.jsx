@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -32,6 +32,190 @@ function RatingInput({ value, onChange }) {
   );
 }
 
+/* ─────────── ImageUploader ─────────── */
+function ImageUploader({ questionId, images, onImagesChange }) {
+  const fileInputRef = useRef(null);
+  const dropZoneRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pasteHint, setPasteHint] = useState(false);
+
+  const uploadToSupabase = async (file) => {
+    const ext = file.name ? file.name.split('.').pop() : 'png';
+    const fileName = `survey_images/${questionId}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const { data, error } = await supabase.storage
+      .from('survey-images')
+      .upload(fileName, file, { cacheControl: '3600', upsert: false });
+    if (error) return null;
+    const { data: urlData } = supabase.storage.from('survey-images').getPublicUrl(fileName);
+    return urlData?.publicUrl ?? null;
+  };
+
+  const processFiles = useCallback(async (files) => {
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
+    setUploading(true);
+    const urls = [];
+    for (const file of imageFiles) {
+      const reader = new FileReader();
+      const dataUrl = await new Promise(resolve => {
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(file);
+      });
+      urls.push({ dataUrl, file });
+    }
+    onImagesChange(prev => [
+      ...(prev || []),
+      ...urls.map(u => ({ url: u.dataUrl, uploading: true, file: u.file }))
+    ]);
+    const finalUrls = [];
+    for (const { file } of urls) {
+      const url = await uploadToSupabase(file);
+      finalUrls.push(url);
+    }
+    onImagesChange(prev => {
+      const updated = [...(prev || [])];
+      let replaceIdx = 0;
+      for (let i = updated.length - urls.length; i < updated.length; i++) {
+        if (finalUrls[replaceIdx]) {
+          updated[i] = { url: finalUrls[replaceIdx], uploading: false };
+        } else {
+          updated.splice(i, 1);
+          i--;
+        }
+        replaceIdx++;
+      }
+      return updated;
+    });
+    setUploading(false);
+  }, [questionId, onImagesChange]);
+
+  const handleFileChange = (e) => {
+    if (e.target.files?.length) processFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files?.length) processFiles(e.dataTransfer.files);
+  };
+
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = () => setIsDragging(false);
+
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
+    if (!imageItems.length) return;
+    e.preventDefault();
+    const files = imageItems.map(item => item.getAsFile()).filter(Boolean);
+    if (files.length) {
+      processFiles(files);
+      setPasteHint(true);
+      setTimeout(() => setPasteHint(false), 2000);
+    }
+  }, [processFiles]);
+
+  useEffect(() => {
+    const el = dropZoneRef.current;
+    if (!el) return;
+    el.addEventListener('paste', handlePaste);
+    return () => el.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
+
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      if (document.activeElement === dropZoneRef.current) return;
+      handlePaste(e);
+    };
+    document.addEventListener('paste', handleGlobalPaste);
+    return () => document.removeEventListener('paste', handleGlobalPaste);
+  }, [handlePaste]);
+
+  const removeImage = (idx) => {
+    onImagesChange(prev => (prev || []).filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div
+        ref={dropZoneRef}
+        tabIndex={0}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onClick={() => fileInputRef.current?.click()}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+        className={`relative border-2 border-dashed rounded-xl px-4 py-4 text-center cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+          isDragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 hover:border-indigo-300 bg-slate-50 hover:bg-indigo-50'
+        }`}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <div className="flex flex-col items-center gap-1 pointer-events-none">
+          <svg className="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M4 16l4-4a3 3 0 014.243 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <p className="text-xs text-slate-500">
+            クリックまたはドラッグ&ドロップで画像を追加
+          </p>
+          <p className="text-xs text-indigo-500 font-medium">
+            クリップボードからCtrl+V（Cmd+V）で貼り付け可能
+          </p>
+        </div>
+        {pasteHint && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-indigo-600/80">
+            <p className="text-white text-sm font-semibold">画像を貼り付けました！</p>
+          </div>
+        )}
+      </div>
+
+      {uploading && (
+        <p className="text-xs text-indigo-500 text-center">アップロード中...</p>
+      )}
+
+      {(images || []).length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {(images || []).map((img, idx) => (
+            <div key={idx} className="relative group">
+              <img
+                src={img.url}
+                alt={`添付画像${idx + 1}`}
+                className={`w-20 h-20 object-cover rounded-lg border border-slate-200 ${
+                  img.uploading ? 'opacity-50' : ''
+                }`}
+              />
+              {img.uploading && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {!img.uploading && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); removeImage(idx); }}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─────────── main component ─────────── */
 export default function SurveyView({ selectedUser, users }) {
   /* admin auth */
@@ -49,6 +233,7 @@ export default function SurveyView({ selectedUser, users }) {
   const [myResponses, setMyResponses]     = useState({}); // surveyId → response
   const [currentSurvey, setCurrentSurvey] = useState(null);
   const [answers, setAnswers]             = useState({});
+  const [answerImages, setAnswerImages]   = useState({}); // questionId → [{url, uploading}]
   const [submitting, setSubmitting]       = useState(false);
   const [personalLoading, setPersonalLoading] = useState(false);
 
@@ -98,8 +283,13 @@ export default function SurveyView({ selectedUser, users }) {
 
   const initAnswers = (survey) => {
     const init = {};
-    (survey.questions || []).forEach(q => { init[q.id] = q.type === 'rating' ? 0 : ''; });
+    const initImages = {};
+    (survey.questions || []).forEach(q => {
+      init[q.id] = q.type === 'rating' ? 0 : '';
+      if (q.type === 'text') initImages[q.id] = [];
+    });
     setAnswers(init);
+    setAnswerImages(initImages);
   };
 
   const submitAnswer = async () => {
@@ -110,6 +300,7 @@ export default function SurveyView({ selectedUser, users }) {
       type: q.type,
       text: q.text,
       value: answers[q.id] ?? (q.type === 'rating' ? 0 : ''),
+      images: q.type === 'text' ? (answerImages[q.id] || []).filter(img => !img.uploading).map(img => img.url) : [],
     }));
     const { error } = await supabase.from('survey_responses').insert({
       survey_id: currentSurvey.id,
@@ -273,7 +464,7 @@ export default function SurveyView({ selectedUser, users }) {
       question: q.text,
       answers: allResponses.map(r => {
         const a = (r.answers || []).find(a => a.questionId === q.id);
-        return a?.value ? { user: r.user_name, value: a.value, month: r.month } : null;
+        return (a?.value || (a?.images && a.images.length)) ? { user: r.user_name, value: a.value, images: a.images || [], month: r.month } : null;
       }).filter(Boolean),
     })).filter(q => q.answers.length > 0);
   })();
@@ -287,7 +478,7 @@ export default function SurveyView({ selectedUser, users }) {
     return { month: latestMonth, respondedIds };
   })();
 
-  /* ────────────────── RENDER ────────────────── */
+  /* ───────────────────── RENDER ───────────────────── */
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
 
@@ -357,8 +548,8 @@ export default function SurveyView({ selectedUser, users }) {
           <div className="max-w-xl mx-auto space-y-4">
             {selectedUser && (
               <p className="text-xs text-slate-500">
-                回答者: <span className="font-semibold text-slate-700">{selectedUser.name}</span>
-                　対象月: <span className="font-semibold text-slate-700">{CURRENT_MONTH}</span>
+                回答者: <span className="font-semibold text-slate-700">{selectedUser.name}</span>　
+                対象月: <span className="font-semibold text-slate-700">{CURRENT_MONTH}</span>
               </p>
             )}
 
@@ -406,13 +597,25 @@ export default function SurveyView({ selectedUser, users }) {
                               <p className="text-xs text-slate-400">1 = 低い　5 = 高い</p>
                             </div>
                           ) : (
-                            <textarea
-                              value={answers[q.id] ?? ''}
-                              onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
-                              rows={4}
-                              placeholder="自由に記入してください"
-                              className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y whitespace-pre-wrap"
-                            />
+                            <div className="space-y-2">
+                              <textarea
+                                value={answers[q.id] ?? ''}
+                                onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
+                                rows={4}
+                                placeholder="自由に記入してください"
+                                className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y whitespace-pre-wrap"
+                              />
+                              <ImageUploader
+                                questionId={q.id}
+                                images={answerImages[q.id] || []}
+                                onImagesChange={(updater) =>
+                                  setAnswerImages(prev => ({
+                                    ...prev,
+                                    [q.id]: typeof updater === 'function' ? updater(prev[q.id] || []) : updater,
+                                  }))
+                                }
+                              />
+                            </div>
                           )}
                         </div>
                       ))}
@@ -420,13 +623,20 @@ export default function SurveyView({ selectedUser, users }) {
                     <div className="px-5 pb-5">
                       <button
                         onClick={submitAnswer}
-                        disabled={submitting || (currentSurvey.questions || []).some(q => q.type === 'rating' && (answers[q.id] ?? 0) === 0)}
+                        disabled={
+                          submitting ||
+                          (currentSurvey.questions || []).some(q => q.type === 'rating' && (answers[q.id] ?? 0) === 0) ||
+                          Object.values(answerImages).some(imgs => (imgs || []).some(img => img.uploading))
+                        }
                         className="w-full text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium"
                       >
                         {submitting ? '送信中...' : '回答を送信する'}
                       </button>
                       {(currentSurvey.questions || []).some(q => q.type === 'rating' && (answers[q.id] ?? 0) === 0) && (
                         <p className="text-xs text-slate-400 text-center mt-1.5">評価項目（1〜5）を全て選択してください</p>
+                      )}
+                      {Object.values(answerImages).some(imgs => (imgs || []).some(img => img.uploading)) && (
+                        <p className="text-xs text-indigo-400 text-center mt-1.5">画像のアップロード完了までお待ちください</p>
                       )}
                     </div>
                   </div>
@@ -470,7 +680,7 @@ export default function SurveyView({ selectedUser, users }) {
                       <h3 className="text-sm font-semibold text-slate-700">
                         {editingSurvey === 'new' ? 'サーベイを作成' : 'サーベイを編集'}
                       </h3>
-                      <button onClick={() => setEditingSurvey(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+                      <button onClick={() => setEditingSurvey(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
                     </div>
                     <div className="p-5 space-y-5">
                       {/* タイトル */}
@@ -665,7 +875,20 @@ export default function SurveyView({ selectedUser, users }) {
                                 <span className="text-xs font-medium text-slate-600">{a.user}</span>
                                 <span className="text-xs text-slate-400">{a.month}</span>
                               </div>
-                              <p className="text-sm text-slate-700 whitespace-pre-wrap">{a.value}</p>
+                              {a.value && <p className="text-sm text-slate-700 whitespace-pre-wrap">{a.value}</p>}
+                              {a.images && a.images.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {a.images.map((url, imgIdx) => (
+                                    <a key={imgIdx} href={url} target="_blank" rel="noopener noreferrer">
+                                      <img
+                                        src={url}
+                                        alt={`添付画像${imgIdx + 1}`}
+                                        className="w-20 h-20 object-cover rounded-lg border border-slate-200 hover:opacity-80 transition-opacity"
+                                      />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
