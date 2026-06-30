@@ -730,6 +730,7 @@ export default function EvaluationProgress() {
   const detailProps = selectedItem ? {
     item: selectedItem, onStatusChange: updateStatus, onMemoChange: updateMemo,
     onPost: (text, files) => post(selectedItem.id, text, files),
+    onAddImagesToGroup: (postId, files) => uploadImages(selectedItem.id, files, null, postId),
     isUploading: uploading[selectedItem.id] ?? false,
     onDeleteEvidence: evidenceId => deleteEvidence(selectedItem.id, evidenceId),
     onDeleteGroup: ids => deleteEvidences(selectedItem.id, ids),

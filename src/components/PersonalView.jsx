@@ -5,8 +5,8 @@ import ItemQuestionSection from './ItemQuestions';
 import { STATUSES, STATUS_MAP, FILTER_TABS, CURRENT_MONTH } from '../constants';
 
 // ── DescriptionBlock: Markdownライクなdescription表示 ────────────
-// Matches [text](url) or bare https://... URLs
-const LINK_RE = /\[([^\]]+)\]\(([^\s)]+)\)|https?:\/\/[^\s\]()]+/g;
+// Matches [text](https://...) or bare https://... URLs — intentionally excludes mailto: and other schemes
+const LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s\]()]+/g;
 
 function MdLine({ text }) {
   const parts = [];
@@ -57,7 +57,7 @@ function DescriptionBlock({ text }) {
 }
 
 // ── PeerEvidenceSection ──────────────────────────────────────────
-function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
+function PeerEvidenceSection({ itemNo, rank, selfUserName, refreshKey }) {
   const [evidences, setEvidences] = useState([]);
   const [loading, setLoading]     = useState(false);
   const [open, setOpen]           = useState(false);
@@ -69,6 +69,7 @@ function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
       .from('evaluation_progress')
       .select('user_name, achieved_month, evaluation_evidences(*)')
       .eq('item_no', itemNo)
+      .eq('rank', rank)
       .eq('status', 'completed')
       .neq('user_name', selfUserName);
     if (error) console.error('参考エビデンス取得エラー:', error);
@@ -86,7 +87,7 @@ function PeerEvidenceSection({ itemNo, selfUserName, refreshKey }) {
     setEvidences([]);
     setOpen(false);
     loadPeerEvidences();
-  }, [itemNo, selfUserName]);
+  }, [itemNo, rank, selfUserName]);
 
   useEffect(() => {
     if (refreshKey > 0) loadPeerEvidences();
@@ -171,6 +172,7 @@ function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
   onPost, isUploading,
   onDeleteEvidence, onDeleteGroup, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
+  onAddImagesToGroup,
   selectedUser,
 }) {
   const [localMemo, setLocalMemo] = useState(item.memo ?? '');
@@ -297,7 +299,7 @@ function ItemDetail({
           <textarea value={localMemo} onChange={e => handleMemoChange(e.target.value)} placeholder="進捗メモ・コメントを入力..." rows={4}
             className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
         </section>
-        <PeerEvidenceSection itemNo={item.item_no} selfUserName={item.user_name} refreshKey={peerRefreshKey} />
+        <PeerEvidenceSection itemNo={item.item_no} rank={item.rank} selfUserName={item.user_name} refreshKey={peerRefreshKey} />
         <section>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
             エビデンス{evidences.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({evidences.length}件)</span>}
@@ -330,6 +332,24 @@ function ItemDetail({
                               </a>
                             ))}
                           </div>
+                        )}
+                        {/* 画像後追加 */}
+                        {onAddImagesToGroup && (
+                          <label className="inline-flex items-center gap-0.5 cursor-pointer text-xs text-indigo-400 hover:text-indigo-600 transition-colors">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={async (e) => {
+                                const files = Array.from(e.target.files ?? []);
+                                if (!files.length) return;
+                                await onAddImagesToGroup(group.key, files);
+                                e.target.value = '';
+                              }}
+                            />
+                            ＋ 画像追加
+                          </label>
                         )}
                         {/* コメント */}
                         {sharedComment && !cs?.open && (
