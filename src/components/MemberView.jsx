@@ -120,8 +120,12 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
   const [retireTarget, setRetireTarget] = useState(null);
   const [retireDate, setRetireDate]   = useState('');
   const [retiring, setRetiring]       = useState(false);
-  const [editTarget, setEditTarget]   = useState(null);
-  const [editForm, setEditForm]       = useState({});
+  const [editTarget, setEditTarget]         = useState(null);
+  const [editForm, setEditForm]             = useState({});
+  const [rankChangeTarget, setRankChangeTarget] = useState(null);
+  const [rankChangeNewRank, setRankChangeNewRank] = useState('');
+  const [rankChanging, setRankChanging]     = useState(false);
+  const [rankChangeResult, setRankChangeResult] = useState(null);
   const [savingEdit, setSavingEdit]   = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -239,13 +243,74 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       const existingNos = new Set((existing || []).map(p => p.item_no));
       const toInsert = (newItems || [])
         .filter(item => item.no != null && !existingNos.has(item.no))
-        .map(item => ({ user_name: progressName, item_no: item.no, status: 'pending', user_id: editTarget.id }));
+        .map(item => ({ user_name: progressName, item_no: item.no, rank: changes.rank, status: 'pending', user_id: editTarget.id }));
       if (toInsert.length > 0) await supabase.from('evaluation_progress').insert(toInsert);
     }
     await fetchData();
     onUsersRefresh();
     setEditTarget(null);
     setSavingEdit(false);
+  };
+
+  const handleRankChange = async () => {
+    if (!rankChangeTarget || !rankChangeNewRank || rankChangeNewRank === rankChangeTarget.rank) return;
+    setRankChanging(true);
+    setRankChangeResult(null);
+    const user = rankChangeTarget;
+    const progressName = user.progress_name ?? user.name;
+    const newRank = rankChangeNewRank;
+    const oldRank = user.rank;
+
+    // 1. users.rank 更新
+    const changes = { rank: newRank };
+    const rankDateCol = getRankDateColumn(newRank);
+    if (rankDateCol && !user[rankDateCol]) changes[rankDateCol] = new Date().toISOString().slice(0, 10);
+    const { error: userErr } = await supabase.from('users').update(changes).eq('id', user.id);
+    if (userErr) {
+      setRankChanging(false);
+      setToast({ type: 'error', message: `ユーザー更新に失敗しました: ${userErr.message}` });
+      return;
+    }
+
+    // 2. 既存 progress と新ランク items を取得
+    const [{ data: existing }, { data: newItems }] = await Promise.all([
+      supabase.from('evaluation_progress').select('id, item_no, rank, status').eq('user_name', progressName),
+      supabase.from('evaluation_items').select('no').eq('rank', newRank).eq('status', 'active'),
+    ]);
+    const newRankNos = new Set((newItems || []).map(i => i.no));
+
+    // 3. rankがnullまたは旧ランクのままの pending レコードを新ランクに修正
+    const toUpdate = (existing || []).filter(p =>
+      p.status === 'pending' &&
+      (p.rank === null || p.rank === oldRank) &&
+      newRankNos.has(p.item_no)
+    );
+    let updatedCount = 0;
+    if (toUpdate.length > 0) {
+      await supabase.from('evaluation_progress').update({ rank: newRank }).in('id', toUpdate.map(p => p.id));
+      updatedCount = toUpdate.length;
+    }
+
+    // 4. 新ランク items のうち未作成のもの（ユニーク制約のある item_no は除外）を新規作成
+    const alreadyCovered = new Set([
+      ...(existing || []).filter(p => p.rank === newRank).map(p => p.item_no),
+      ...toUpdate.map(p => p.item_no),
+    ]);
+    const existingAnyRank = new Set((existing || []).map(p => p.item_no));
+    const toInsert = (newItems || [])
+      .filter(i => !alreadyCovered.has(i.no) && !existingAnyRank.has(i.no))
+      .map(i => ({ user_name: progressName, item_no: i.no, rank: newRank, status: 'pending', user_id: user.id }));
+    let createdCount = 0;
+    if (toInsert.length > 0) {
+      await supabase.from('evaluation_progress').insert(toInsert);
+      createdCount = toInsert.length;
+    }
+
+    await fetchData();
+    onUsersRefresh();
+    setRankChanging(false);
+    setRankChangeResult({ createdCount, updatedCount });
+    setRankChangeTarget(prev => ({ ...prev, rank: newRank }));
   };
 
   const handleDelete = async () => {
@@ -410,6 +475,11 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                         }}
                         className="flex-1 text-xs py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors">
                         編集
+                      </button>
+                      <button
+                        onClick={() => { setRankChangeTarget(u); setRankChangeNewRank(''); setRankChangeResult(null); }}
+                        className="text-xs px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors">
+                        ランク変更
                       </button>
                       <button
                         onClick={() => { setRetireTarget(u); setRetireDate(''); }}
@@ -588,6 +658,75 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                 {savingEdit ? '保存中...' : '保存する'}
               </button>
               <button onClick={() => setEditTarget(null)} className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ランク変更モーダル */}
+      {rankChangeTarget && (
+        <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700">ランク変更: {rankChangeTarget.name}</h3>
+              <button onClick={() => setRankChangeTarget(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-slate-500">現在のランク:</span>
+                <span className="font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">
+                  {rankChangeTarget.rank || '未設定'}
+                </span>
+              </div>
+              {!rankChangeResult ? (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1.5">新しいランク *</label>
+                    <select value={rankChangeNewRank}
+                      onChange={e => setRankChangeNewRank(e.target.value)}
+                      className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                      <option value="">選択してください</option>
+                      {availableRanks.filter(r => r !== rankChangeTarget.rank).map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {rankChangeNewRank && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 space-y-1">
+                      <p className="font-semibold">変更時の処理:</p>
+                      <p>・users.rank を <strong>{rankChangeNewRank}</strong> に更新</p>
+                      <p>・{rankChangeNewRank}の評価項目のうち未作成のものをpendingで新規作成</p>
+                      <p>・rankがnullまたは旧ランクのままのpendingレコードを修正</p>
+                      <p>・completedの実績は変更しません</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700 space-y-1">
+                  <p className="font-semibold">完了しました</p>
+                  <p>{rankChangeResult.createdCount}件の項目を新規作成、{rankChangeResult.updatedCount}件を更新しました</p>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 flex gap-2">
+              {!rankChangeResult ? (
+                <>
+                  <button onClick={handleRankChange}
+                    disabled={rankChanging || !rankChangeNewRank || rankChangeNewRank === rankChangeTarget.rank}
+                    className="flex-1 text-sm py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
+                    {rankChanging ? '処理中...' : '変更を実行'}
+                  </button>
+                  <button onClick={() => setRankChangeTarget(null)}
+                    className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">
+                    キャンセル
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setRankChangeTarget(null)}
+                  className="flex-1 text-sm py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">
+                  閉じる
+                </button>
+              )}
             </div>
           </div>
         </div>
