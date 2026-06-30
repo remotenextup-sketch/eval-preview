@@ -232,6 +232,21 @@ function ItemDetail({
     setNgStates({});
   }, [item.id]);
 
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = it.getAsFile();
+        if (file) {
+          const previewUrl = URL.createObjectURL(file);
+          setPendingFiles(prev => [...prev, { file, previewUrl }]);
+        }
+      }
+    }
+  };
+
   const handleMemoChange = val => {
     setLocalMemo(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -303,7 +318,7 @@ function ItemDetail({
                       <div className="flex-1 min-w-0 space-y-2">
                         {/* テキストエビデンス */}
                         {textEv && (
-                          <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 {textEv.content}</p>
+                          <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">📝 <MdLine text={textEv.content} /></p>
                         )}
                         {/* 画像グリッド */}
                         {images.length > 0 && (
@@ -318,7 +333,7 @@ function ItemDetail({
                         )}
                         {/* コメント */}
                         {sharedComment && !cs?.open && (
-                          <p className="text-xs text-slate-500 leading-relaxed">💬 {sharedComment}</p>
+                          <p className="text-xs text-slate-500 leading-relaxed">💬 <MdLine text={sharedComment} /></p>
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
@@ -445,7 +460,8 @@ function ItemDetail({
             <textarea
               value={postText}
               onChange={e => setPostText(e.target.value)}
-              placeholder="コメントやテキストエビデンスを入力..."
+              onPaste={handlePaste}
+              placeholder="コメントやテキストエビデンスを入力… 画像はCtrl+V/Cmd+Vで貼り付け可"
               rows={3}
               className="w-full text-xs px-3 py-2.5 bg-transparent resize-none focus:outline-none"
             />
@@ -918,6 +934,21 @@ function ListPane({
   kpiTarget, currentMonthCount,
   plans,
 }) {
+  const [questionItemIds, setQuestionItemIds] = useState(new Set());
+  const [showOnlyWithQuestions, setShowOnlyWithQuestions] = useState(false);
+
+  useEffect(() => {
+    const defIds = (items || []).map(i => i.item_def_id).filter(Boolean);
+    if (!defIds.length) { setQuestionItemIds(new Set()); return; }
+    supabase.from('item_questions').select('item_id').in('item_id', defIds)
+      .then(({ data }) => setQuestionItemIds(new Set((data || []).map(q => q.item_id))));
+  }, [items]);
+
+  const questionCount = (items || []).filter(i => questionItemIds.has(i.item_def_id)).length;
+  const displayItems = showOnlyWithQuestions
+    ? filteredItems.filter(i => questionItemIds.has(i.item_def_id))
+    : filteredItems;
+
   // item_def_id ごとに「最も近い未達成の計画月」を導出
   // 未来月優先、同方向なら CURRENT_MONTH に近い方を採用
   const nearestPlanMonth = {};
@@ -995,6 +1026,12 @@ function ListPane({
               {tab.label}{tab.value !== 'all' && <span className="ml-1 opacity-70">({statusCounts[tab.value] ?? 0})</span>}
             </button>
           ))}
+          {questionCount > 0 && (
+            <button onClick={() => setShowOnlyWithQuestions(v => !v)}
+              className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${showOnlyWithQuestions ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
+              ❓ 質問あり <span className="opacity-80">({questionCount})</span>
+            </button>
+          )}
         </div>
         {availableMonths.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100">
@@ -1004,14 +1041,14 @@ function ListPane({
             ))}
           </div>
         )}
-        <p className="text-xs text-slate-400">{selectedUser?.rank && `ランク「${selectedUser.rank}」 `}{filteredItems.length}件表示 / 全{items.length}件</p>
+        <p className="text-xs text-slate-400">{selectedUser?.rank && `ランク「${selectedUser.rank}」 `}{displayItems.length}件表示 / 全{items.length}件</p>
       </div>
       <div className="flex-1 overflow-y-auto">
         {loading ? <div className="text-center py-16 text-slate-400 text-sm">読み込み中...</div>
-          : filteredItems.length === 0 ? <div className="text-center py-16 text-slate-400 text-sm">該当する項目がありません</div>
+          : displayItems.length === 0 ? <div className="text-center py-16 text-slate-400 text-sm">該当する項目がありません</div>
           : (
             <div className="divide-y divide-slate-100">
-              {filteredItems.map(item => {
+              {displayItems.map(item => {
                 const st = STATUS_MAP[item.status] ?? STATUS_MAP.pending;
                 const evidences = item.evaluation_evidences ?? [];
                 const isActive = item.id === activeId;
