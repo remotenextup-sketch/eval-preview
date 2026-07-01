@@ -11,7 +11,6 @@ const RANK_PERIOD_DEFS = [
   { label: 'ディレクター',     from: 'director_at',    to: null,            rankValue: 'ディレクター' },
 ];
 
-// ランク名からRankPeriodDefのインデックスを取得
 const RANK_DEF_INDEX = {
   'トレーニー': 1,
   'パートナー': 2,
@@ -53,11 +52,8 @@ function RankPeriods({ user }) {
       const fromDate = user[def.from];
       if (!fromDate) return null;
 
-      // このランク期間が現在のランクに対応するかどうかを判定
-      // currentRankDefIndex が null の場合はフォールバックとして toDate がない場合を継続中とする
       const isCurrentRank = currentRankDefIndex !== null ? idx === currentRankDefIndex : false;
 
-      // toDateの取得: 現在のランクに対応する期間はtoDateをnullとして継続中にする
       let toDate;
       if (isCurrentRank) {
         toDate = null;
@@ -95,7 +91,6 @@ function RankPeriods({ user }) {
   );
 }
 
-// ランク変更時に対応する昇格日時カラムを返す
 function getRankDateColumn(rank) {
   const map = {
     'トレーニー': 'trainee_at',
@@ -113,7 +108,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
   const [showResigned, setShowResigned] = useState(false);
   const [rankFilter, setRankFilter]   = useState('all');
   const [deptFilter, setDeptFilter]   = useState('all');
-  const [viewMode, setViewMode]       = useState('list'); // 'list' | 'gallery'
+  const [viewMode, setViewMode]       = useState('list');
   const [showAdd, setShowAdd]         = useState(false);
   const [addForm, setAddForm]         = useState(EMPTY_MEMBER_FORM);
   const [savingAdd, setSavingAdd]     = useState(false);
@@ -165,7 +160,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
 
     const { error } = await supabase.storage.from('avatars').upload(newPath, file);
     if (!error) {
-      // 旧ファイルを Storage から削除
       const oldUrl = editForm.avatar_url || editTarget.avatar_url;
       if (oldUrl) {
         const match = decodeURIComponent(oldUrl).match(/\/avatars\/([^?]+)/);
@@ -222,11 +216,9 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     if (editForm.birth_year !== undefined) changes.birth_year = editForm.birth_year ? parseInt(editForm.birth_year) : null;
     if (editForm.avatar_url !== undefined) changes.avatar_url = editForm.avatar_url || null;
 
-    // ランクが変更された場合、対応する昇格日時カラムを現在日時でセット
     if (changes.rank && changes.rank !== editTarget.rank) {
       const rankDateCol = getRankDateColumn(changes.rank);
       if (rankDateCol && !editTarget[rankDateCol]) {
-        // 昇格日時が未設定の場合のみ今日の日付をセット
         changes[rankDateCol] = new Date().toISOString().slice(0, 10);
       }
     }
@@ -237,13 +229,20 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     if (changes.rank && changes.rank !== editTarget.rank) {
       const progressName = editTarget.progress_name ?? editTarget.name;
       const [{ data: existing }, { data: newItems }] = await Promise.all([
-        supabase.from('evaluation_progress').select('item_no').eq('user_name', progressName),
+        supabase.from('evaluation_progress').select('item_no, status').eq('user_name', progressName),
         supabase.from('evaluation_items').select('no').eq('rank', changes.rank).eq('status', 'active'),
       ]);
+      // statusがpendingでないレコードのitem_noは除外して重複挿入・上書きを防ぐ
       const existingNos = new Set((existing || []).map(p => p.item_no));
       const toInsert = (newItems || [])
         .filter(item => item.no != null && !existingNos.has(item.no))
-        .map(item => ({ user_name: progressName, item_no: item.no, rank: changes.rank, status: 'pending', user_id: editTarget.id }));
+        .map(item => ({
+          user_name: progressName,
+          item_no: item.no,
+          rank: changes.rank,
+          status: 'pending',
+          user_id: editTarget.id,
+        }));
       if (toInsert.length > 0) await supabase.from('evaluation_progress').insert(toInsert);
     }
     await fetchData();
@@ -272,14 +271,14 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       return;
     }
 
-    // 2. 既存 progress と新ランク items を取得
+    // 2. 既存 progress と新ランク items を取得（statusも必ず取得）
     const [{ data: existing }, { data: newItems }] = await Promise.all([
       supabase.from('evaluation_progress').select('id, item_no, rank, status').eq('user_name', progressName),
       supabase.from('evaluation_items').select('no').eq('rank', newRank).eq('status', 'active'),
     ]);
     const newRankNos = new Set((newItems || []).map(i => i.no));
 
-    // 3. rankがnullまたは旧ランクのままの pending レコードを新ランクに修正
+    // 3. statusが必ずpendingであるレコードのみをrankを新ランクに修正（completedは絶対に触らない）
     const toUpdate = (existing || []).filter(p =>
       p.status === 'pending' &&
       (p.rank === null || p.rank === oldRank) &&
@@ -287,23 +286,35 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     );
     let updatedCount = 0;
     if (toUpdate.length > 0) {
-      await supabase.from('evaluation_progress').update({ rank: newRank }).in('id', toUpdate.map(p => p.id));
-      updatedCount = toUpdate.length;
+      const { error: updateErr } = await supabase
+        .from('evaluation_progress')
+        .update({ rank: newRank })
+        .in('id', toUpdate.map(p => p.id));
+      if (!updateErr) updatedCount = toUpdate.length;
+      else console.error('rank更新エラー:', updateErr);
     }
 
-    // 4. 新ランク items のうち未作成のもの（ユニーク制約のある item_no は除外）を新規作成
-    const alreadyCovered = new Set([
+    // 4. 新ランク items のうち未作成のもの（item_noが既存に全く存在しないもの）のみ新規作成
+    // completedを含む全既存item_noを除外対象とすることで、完了済み項目の再pendingを防ぐ
+    const alreadyCoveredByNewRank = new Set([
       ...(existing || []).filter(p => p.rank === newRank).map(p => p.item_no),
       ...toUpdate.map(p => p.item_no),
     ]);
-    const existingAnyRank = new Set((existing || []).map(p => p.item_no));
+    const existingAnyRankNos = new Set((existing || []).map(p => p.item_no));
     const toInsert = (newItems || [])
-      .filter(i => !alreadyCovered.has(i.no) && !existingAnyRank.has(i.no))
-      .map(i => ({ user_name: progressName, item_no: i.no, rank: newRank, status: 'pending', user_id: user.id }));
+      .filter(i => !alreadyCoveredByNewRank.has(i.no) && !existingAnyRankNos.has(i.no))
+      .map(i => ({
+        user_name: progressName,
+        item_no: i.no,
+        rank: newRank,
+        status: 'pending',
+        user_id: user.id,
+      }));
     let createdCount = 0;
     if (toInsert.length > 0) {
-      await supabase.from('evaluation_progress').insert(toInsert);
-      createdCount = toInsert.length;
+      const { error: insertErr } = await supabase.from('evaluation_progress').insert(toInsert);
+      if (!insertErr) createdCount = toInsert.length;
+      else console.error('進捗挿入エラー:', insertErr);
     }
 
     await fetchData();
@@ -349,7 +360,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         </div>
       )}
 
-      {/* ツールバー */}
       <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 z-10 flex flex-wrap items-center gap-2 shrink-0">
         <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs shrink-0">
           {[['active', '在籍中'], ['resigned', '退職済み']].map(([v, l]) => (
@@ -374,7 +384,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         <span className="text-xs text-slate-400">{filtered.length}名</span>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* ビュー切り替え */}
           <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
             {[['list', 'リスト'], ['gallery', 'ギャラリー']].map(([v, l]) => (
               <button key={v} onClick={() => setViewMode(v)}
@@ -397,7 +406,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       ) : filtered.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">該当するメンバーがいません</div>
       ) : viewMode === 'gallery' ? (
-        /* ギャラリービュー */
         <div className="p-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {filtered.map(u => (
             <div key={u.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col items-center gap-2 text-center ${u.resigned_at ? 'opacity-60' : ''}`}>
@@ -414,7 +422,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
           ))}
         </div>
       ) : (
-        /* リストビュー */
         <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(u => {
             const isResigned = !!u.resigned_at;
@@ -501,7 +508,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         </div>
       )}
 
-      {/* メンバー追加モーダル */}
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
@@ -565,7 +571,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         </div>
       )}
 
-      {/* 退職処理モーダル */}
       {retireTarget && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
@@ -578,7 +583,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                 <input type="date" value={retireDate} onChange={e => setRetireDate(e.target.value)}
                   className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
-              <p className="text-xs text-slate-400">退職後は、ヘッダーのユーザー選択から除外されます。</p>
+              <p className="text-xs text-slate-400">退職後はダッシュボードのユーザー選択から除外されます。</p>
             </div>
             <div className="px-5 py-4 border-t border-slate-200 flex gap-2">
               <button onClick={handleRetire} disabled={retiring || !retireDate}
@@ -591,7 +596,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         </div>
       )}
 
-      {/* 編集モーダル */}
       {editTarget && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
@@ -600,7 +604,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
               <button onClick={() => setEditTarget(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4">
-              {/* 顔写真 */}
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-2">顔写真</label>
                 <div className="flex items-center gap-3">
@@ -615,7 +618,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                   )}
                 </div>
               </div>
-              {/* ランク */}
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">ランク</label>
                 <select value={editForm.rank} onChange={e => setEditForm(p => ({ ...p, rank: e.target.value }))}
@@ -624,10 +626,9 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                   {availableRanks.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
                 {editForm.rank && editForm.rank !== editTarget.rank && (
-                  <p className="text-xs text-amber-600 mt-1">※ ランク変更後、新しいランクの評価項目が自動追加されます。また昇格日時が未設定の場合は本日の日付が記録されます。</p>
+                  <p className="text-xs text-amber-600 mt-1">※ ランク変更後、新しいランクの評価項目が自動追加されます。また資格日が未設定の場合は本日の日付が記録されます。</p>
                 )}
               </div>
-              {/* 部署 */}
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">部署</label>
                 <input type="text" value={editForm.department}
@@ -635,7 +636,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                   placeholder="ECチーム"
                   className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
-              {/* モール */}
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">担当モール</label>
                 <input type="text" value={editForm.mall}
@@ -643,7 +643,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                   placeholder="楽天"
                   className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
-              {/* 生年 */}
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">生年（例：1990）</label>
                 <input type="number" value={editForm.birth_year ?? ''}
@@ -663,7 +662,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         </div>
       )}
 
-      {/* ランク変更モーダル */}
       {rankChangeTarget && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
@@ -732,7 +730,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         </div>
       )}
 
-      {/* 完全削除モーダル */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
@@ -741,7 +738,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
             </div>
             <div className="p-5 space-y-3">
               <p className="text-sm text-slate-700">
-                <span className="font-semibold">{deleteTarget.name}</span>さんのデータを完全に削除します。この操作は取り消せません。
+                <span className="font-semibold">{deleteTarget.name}</span>のデータを完全に削除します。この操作は取り消せません。
               </p>
               <p className="text-xs text-slate-400">評価進捗・エビデンスを含めて全て削除されます。</p>
             </div>
