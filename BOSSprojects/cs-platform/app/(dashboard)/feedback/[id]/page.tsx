@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { SupabaseClient } from '@supabase/supabase-js'
-import { updateStatus, toggleVote } from '../actions'
+import { updateStatus, toggleVote, deleteFeedback } from '../actions'
+import { DeleteFeedbackButton } from '../DeleteFeedbackButton'
 
 type FeedbackVote = { id: string; user_id: string }
 type FeedbackItem = {
@@ -60,6 +61,11 @@ export default async function FeedbackDetailPage({ params }: Props) {
   const voteAction = async () => {
     'use server'
     await toggleVote(id)
+  }
+
+  const deleteAction = async () => {
+    'use server'
+    await deleteFeedback(id)
   }
 
   return (
@@ -145,6 +151,13 @@ export default async function FeedbackDetailPage({ params }: Props) {
               </p>
             )}
           </div>
+        </div>
+
+        {/* Delete */}
+        <div className="mt-4 flex justify-end">
+          <form action={deleteAction}>
+            <DeleteFeedbackButton />
+          </form>
         </div>
 
         {/* Comments placeholder */}

@@ -52,6 +52,17 @@ export async function updateStatus(id: string, status: string) {
   revalidatePath('/feedback')
 }
 
+export async function deleteFeedback(id: string) {
+  const supabase = (await createClient()) as AnyClient
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  await supabase.from('feedback_items').delete().eq('id', id)
+
+  revalidatePath('/feedback')
+  redirect('/feedback')
+}
+
 export async function toggleVote(feedbackId: string) {
   const supabase = (await createClient()) as AnyClient
   const { data: { user } } = await supabase.auth.getUser()

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { AiConsultButton } from './AiConsultButton'
 
 type FeedbackVote = { id: string; user_id: string }
 type FeedbackItem = {
@@ -86,12 +87,15 @@ export default async function FeedbackPage({ searchParams }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-base font-semibold text-gray-900">改善バックログ</h1>
-          <Link
-            href="/feedback/new"
-            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md transition-colors"
-          >
-            + 新規追加
-          </Link>
+          <div className="flex items-center gap-2">
+            <AiConsultButton />
+            <Link
+              href="/feedback/new"
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md transition-colors"
+            >
+              + 新規追加
+            </Link>
+          </div>
         </div>
 
         {/* Tabs */}
