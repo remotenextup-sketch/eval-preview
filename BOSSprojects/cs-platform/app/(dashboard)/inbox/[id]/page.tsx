@@ -251,40 +251,20 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
           <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">顧客情報</h3>
-              <dl className="space-y-1.5 text-sm">
-                <div className="flex gap-3">
-                  <dt className="text-gray-400 w-24 flex-shrink-0">顧客名</dt>
-                  <dd className="text-gray-900 font-medium">{inq.customer_name ?? '─'}</dd>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">内部コメント</h3>
+              {comments.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {comments.map((c) => (
+                    <div key={c.id} className="bg-yellow-50 rounded-lg p-2.5 border border-yellow-100">
+                      <p className="text-xs text-gray-800 mb-1.5">{c.body}</p>
+                      <p className="text-xs text-gray-400">
+                        {c.author?.display_name} · {new Date(c.created_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex gap-3">
-                  <dt className="text-gray-400 w-24 flex-shrink-0">注文番号</dt>
-                  <dd className="text-gray-700 font-mono text-xs">
-                    {inq.order_number
-                      ? /^\d+-\d{8}-\d{9}$/.test(inq.order_number)
-                        ? (
-                          <a
-                            href={`https://order.rms.rakuten.co.jp/rms/mall/order/detailConfirm?orderNumber=${inq.order_number}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {inq.order_number} ↗
-                          </a>
-                        )
-                        : inq.order_number
-                      : '─'}
-                  </dd>
-                </div>
-                <div className="flex gap-3">
-                  <dt className="text-gray-400 w-24 flex-shrink-0">商品名</dt>
-                  <dd className="text-gray-700">{inq.item_name ?? '─'}</dd>
-                </div>
-                <div className="flex gap-3">
-                  <dt className="text-gray-400 w-24 flex-shrink-0">問い合わせNo</dt>
-                  <dd className="text-gray-700 font-mono text-xs">{inq.inquiry_number ?? '─'}</dd>
-                </div>
-              </dl>
+              )}
+              <CommentForm inquiryId={id} lockedByOther={lockedByOther} />
             </div>
 
             <div className="space-y-3">
@@ -377,25 +357,6 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">アクション</h3>
               <div className="bg-gray-50 rounded p-2 text-xs text-gray-400 text-center border border-dashed border-gray-200">送信予約（準備中）</div>
               <div className="bg-gray-50 rounded p-2 text-xs text-gray-400 text-center border border-dashed border-gray-200">スヌーズ（準備中）</div>
-            </section>
-
-            <section className="p-4">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">内部コメント</h3>
-              {comments.length === 0 ? (
-                <p className="text-xs text-gray-400">コメントはありません</p>
-              ) : (
-                <div className="space-y-2 mb-3">
-                  {comments.map((c) => (
-                    <div key={c.id} className="bg-yellow-50 rounded-lg p-2.5 border border-yellow-100">
-                      <p className="text-xs text-gray-800 mb-1.5">{c.body}</p>
-                      <p className="text-xs text-gray-400">
-                        {c.author?.display_name} · {new Date(c.created_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <CommentForm inquiryId={id} lockedByOther={lockedByOther} />
             </section>
 
             <section className="p-4">
