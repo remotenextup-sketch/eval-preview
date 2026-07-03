@@ -354,12 +354,6 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
               />
             </section>
 
-            <section className="p-4 space-y-2">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">アクション</h3>
-              <div className="bg-gray-50 rounded p-2 text-xs text-gray-400 text-center border border-dashed border-gray-200">送信予約（準備中）</div>
-              <div className="bg-gray-50 rounded p-2 text-xs text-gray-400 text-center border border-dashed border-gray-200">スヌーズ（準備中）</div>
-            </section>
-
             <section className="p-4">
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">活動ログ</h3>
               <div className="space-y-2.5">
