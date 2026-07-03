@@ -627,3 +627,35 @@ export async function removeTag(inquiryId: string, tagId: string) {
 
   revalidatePath(`/inbox/${inquiryId}`)
 }
+
+export async function addToKnowledgeCases(
+  inquiryMessageId: string,
+  inquiryId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証エラー' }
+
+  const [{ data: msg }, { data: inq }] = await Promise.all([
+    supabase.from('inquiry_messages').select('body').eq('id', inquiryMessageId).single(),
+    supabase.from('inquiries').select('item_name, raw_payload').eq('id', inquiryId).single(),
+  ])
+
+  if (!msg) return { error: 'メッセージが見つかりません' }
+
+  const rawPayload = inq?.raw_payload as Record<string, unknown> | null
+  const question = (typeof rawPayload?.message === 'string' ? rawPayload.message : null)
+
+  const { error } = await createKnowledgeClient()
+    .from('knowledge_cases')
+    .insert({
+      product_name: inq?.item_name ?? null,
+      question,
+      answer: msg.body,
+      reply_body: msg.body,
+      source: 'manual',
+    })
+
+  if (error) return { error: error.message }
+  return {}
+}

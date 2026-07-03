@@ -15,6 +15,7 @@ import type { ShippingOrderData } from './ShippingStatusSection'
 import { getCustomerLinkCandidates, getCustomerInquiryHistory } from '@/lib/customer-queries'
 import type { InquiryStatus, DbUser, DbInquiry, DbTag, DbCustomerProfile } from '@/lib/types'
 import { channelMeta } from '@/lib/channel-meta'
+import { AddToCasesButton } from './AddToCasesButton'
 
 type UserOption = Pick<DbUser, 'id' | 'display_name'>
 
@@ -308,6 +309,11 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                           {isAI && <span className="text-purple-400 mr-1">AIドラフト</span>}
                           {new Date(msg.sent_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
+                        {!isInbound && (
+                          <div className="text-right">
+                            <AddToCasesButton inquiryMessageId={msg.id} inquiryId={id} />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
