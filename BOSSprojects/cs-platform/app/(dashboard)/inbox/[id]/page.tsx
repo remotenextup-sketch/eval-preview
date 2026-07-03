@@ -16,6 +16,8 @@ import { getCustomerLinkCandidates, getCustomerInquiryHistory } from '@/lib/cust
 import type { InquiryStatus, DbUser, DbInquiry, DbTag, DbCustomerProfile } from '@/lib/types'
 import { channelMeta } from '@/lib/channel-meta'
 import { AddToCasesButton } from './AddToCasesButton'
+import { SupportActionsSection } from './SupportActionsSection'
+import type { SupportAction } from './SupportActionsSection'
 
 type UserOption = Pick<DbUser, 'id' | 'display_name'>
 
@@ -125,6 +127,7 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
     { data: rawAiLogs },
     { data: rawInquiryTags },
     { data: rawAllTags },
+    { data: rawSupportActions },
   ] = await Promise.all([
     supabase.from('inquiry_messages')
       .select('*, sender:sender_id(id, display_name)')
@@ -154,12 +157,19 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
     supabase.from('tags')
       .select('*')
       .order('name', { ascending: true }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('support_actions')
+      .select('id, action_type, reason_category, reason_detail, refund_amount, replacement_quantity, estimated_loss_amount, ai_confidence, status, created_at, product_name, sku, quantity, detection_source')
+      .eq('inquiry_id', id)
+      .neq('status', 'deleted')
+      .order('created_at', { ascending: false }),
   ])
 
   const messages = (rawMessages ?? []) as unknown as MessageRow[]
   const comments = (rawComments ?? []) as unknown as CommentRow[]
   const activityLogs = (rawLogs ?? []) as unknown as LogRow[]
   const users = (rawUsers ?? []) as unknown as UserOption[]
+  const supportActions = (rawSupportActions ?? []) as unknown as SupportAction[]
   const latestAiLog = (rawAiLogs ?? [])[0] as unknown as AiLogRow | undefined
   const inquiryTagIds = new Set((rawInquiryTags ?? []).map((r) => (r as unknown as InquiryTagRow).tag_id))
   const allTags = (rawAllTags ?? []) as unknown as DbTag[]
@@ -358,6 +368,11 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                 orderNumber={inq.order_number ?? null}
                 order={shippingOrder}
               />
+            </section>
+
+            <section className="p-4">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">対応履歴</h3>
+              <SupportActionsSection actions={supportActions} />
             </section>
 
             <section className="p-4">

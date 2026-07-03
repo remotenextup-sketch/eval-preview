@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 const NAV_ITEMS = [
   { label: '受信箱', href: '/inbox' },
   { label: '顧客', href: '/customers' },
+  { label: '対応履歴', href: '/support-actions' },
 ]
 
 export function NavLinks() {

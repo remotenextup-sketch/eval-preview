@@ -111,11 +111,13 @@ export async function sendReply(
 
   const { data: inq } = await supabase
     .from('inquiries')
-    .select('source_channel, external_id, item_name, raw_payload')
+    .select('source_channel, external_id, item_name, raw_payload, order_number, customer_name')
     .eq('id', inquiryId)
     .single()
 
   if (!inq) return { error: '問い合わせが見つかりません' }
+
+  let savedMessageId: string | null = null
 
   if (inq.source_channel === 'rakuten') {
     if (!inq.external_id) {
@@ -151,7 +153,7 @@ export async function sendReply(
       return { error: `楽天返信エラー: ${proxyData.reason ?? `HTTP ${proxyRes.status}`}` }
     }
 
-    await supabase.from('inquiry_messages').insert({
+    const { data: rakutenMsg } = await supabase.from('inquiry_messages').insert({
       inquiry_id: inquiryId,
       direction: 'outbound',
       sender_type: 'staff',
@@ -159,7 +161,8 @@ export async function sendReply(
       body,
       is_ai_draft: isAiDraft,
       ai_modified: isAiDraft && aiModified,
-    })
+    }).select('id').single()
+    savedMessageId = rakutenMsg?.id ?? null
 
     await supabase.from('activity_logs').insert({
       inquiry_id: inquiryId,
@@ -177,7 +180,7 @@ export async function sendReply(
       after_val: null,
     })
   } else {
-    await supabase.from('inquiry_messages').insert({
+    const { data: otherMsg } = await supabase.from('inquiry_messages').insert({
       inquiry_id: inquiryId,
       direction: 'outbound',
       sender_type: 'staff',
@@ -185,7 +188,8 @@ export async function sendReply(
       body,
       is_ai_draft: isAiDraft,
       ai_modified: isAiDraft && aiModified,
-    })
+    }).select('id').single()
+    savedMessageId = otherMsg?.id ?? null
 
     await supabase.from('activity_logs').insert({
       inquiry_id: inquiryId,
@@ -269,6 +273,156 @@ export async function sendReply(
     console.error('[sendReply] knowledge_cases auto-save failed:', e)
   }
 
+  // support_actions 自動検知（失敗しても sendReply を止めない）
+  if (savedMessageId) {
+    try {
+      const rawPayload = inq.raw_payload as Record<string, unknown> | null
+      const customerQuestion = typeof rawPayload?.message === 'string' ? rawPayload.message : ''
+      await detectAndSaveSupportAction({
+        inquiryId,
+        messageId: savedMessageId,
+        replyBody: body,
+        customerQuestion,
+        itemName: inq.item_name ?? null,
+        orderNumber: inq.order_number ?? null,
+        customerName: inq.customer_name ?? null,
+        mall: inq.source_channel ?? null,
+        userId: user.id,
+      })
+    } catch (e) {
+      console.error('[sendReply] support action detection failed:', e)
+    }
+  }
+
+  return {}
+}
+
+async function detectAndSaveSupportAction(params: {
+  inquiryId: string
+  messageId: string
+  replyBody: string
+  customerQuestion: string
+  itemName: string | null
+  orderNumber: string | null
+  customerName: string | null
+  mall: string | null
+  userId: string
+}): Promise<void> {
+  const { inquiryId, messageId, replyBody, customerQuestion, itemName, orderNumber, customerName, mall, userId } = params
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+  const userContent = [
+    `【商品名】${itemName ?? '不明'}`,
+    `【注文番号】${orderNumber ?? '不明'}`,
+    `【顧客名】${customerName ?? '不明'}`,
+    customerQuestion ? `【問い合わせ内容】\n${customerQuestion}` : '',
+    `【送信した返信】\n${replyBody}`,
+  ].filter(Boolean).join('\n\n')
+
+  const resp = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 512,
+    system: `あなたはCS対応ログ解析AIです。送信した返信文を分析し、返金・交換・再送・補填が「確定」したかをJSON形式で返してください。
+
+【確定表現の例（保存対象）】
+・「返金いたします」「ご返金させていただきます」「返金処理を行います」
+・「交換品を手配しました」「新しい商品をお送りします」
+・「再送します」「改めてお送りします」
+・「部品をお送りします」「パーツを送付します」
+・「クーポンを発行します」「ポイントを付与します」
+
+【提案表現（保存対象外）→ detected:false】
+・「〜できます」「〜可能です」「〜はいかがでしょうか」「ご検討ください」
+
+【出力形式】JSONのみ（説明・コードブロック不要）
+detected=falseの場合: {"detected":false}
+detected=trueの場合:
+{
+  "detected":true,
+  "action_type":"refund"|"partial_refund"|"exchange"|"resend"|"parts_resend"|"coupon"|"other_compensation",
+  "reason_category":"defective"|"damaged"|"missing_parts"|"wrong_item"|"wrong_quantity"|"size_mismatch"|"customer_reason"|"delivery_issue"|"specification_misunderstanding"|"other",
+  "reason_detail":"理由の詳細（30字以内）",
+  "refund_amount":数値またはnull,
+  "replacement_quantity":数値またはnull,
+  "estimated_loss_amount":数値またはnull,
+  "sku":文字列またはnull,
+  "product_id":文字列またはnull,
+  "quantity":数値またはnull,
+  "confidence":0から1の数値
+}`,
+    messages: [{ role: 'user', content: userContent }],
+  })
+
+  const raw = resp.content[0]?.type === 'text' ? resp.content[0].text.trim() : ''
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let result: any
+  try {
+    result = JSON.parse(raw.replace(/^```json?\s*/i, '').replace(/```\s*$/, ''))
+  } catch {
+    return
+  }
+
+  if (!result?.detected) return
+
+  const confidence = typeof result.confidence === 'number' ? result.confidence : 0
+  const status = confidence < 0.75 ? 'needs_review' : 'auto_saved'
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const kb = createKnowledgeClient() as any
+  const { error: insertErr } = await kb.from('support_actions').insert({
+    inquiry_id: inquiryId,
+    message_id: messageId,
+    mall,
+    order_number: orderNumber,
+    customer_name: customerName,
+    product_name: itemName,
+    sku: result.sku ?? null,
+    product_id: result.product_id ?? null,
+    quantity: result.quantity ?? null,
+    action_type: result.action_type,
+    reason_category: result.reason_category ?? null,
+    reason_detail: result.reason_detail ?? null,
+    refund_amount: result.refund_amount ?? null,
+    replacement_quantity: result.replacement_quantity ?? null,
+    estimated_loss_amount: result.estimated_loss_amount ?? null,
+    staff_id: userId,
+    detection_source: 'ai',
+    ai_confidence: confidence,
+    status,
+  })
+  // 重複（unique constraint違反）は無視
+  if (insertErr && !insertErr.message?.includes('duplicate') && !insertErr.code?.startsWith('23')) {
+    console.error('[detectAndSaveSupportAction] insert error:', insertErr)
+  }
+}
+
+export async function deleteSupportAction(supportActionId: string): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証エラー' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('support_actions')
+    .update({ status: 'deleted', updated_at: new Date().toISOString() })
+    .eq('id', supportActionId)
+    .eq('staff_id', user.id)
+
+  if (error) return { error: error.message }
+  return {}
+}
+
+export async function confirmSupportAction(supportActionId: string): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証エラー' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('support_actions')
+    .update({ status: 'confirmed', updated_at: new Date().toISOString() })
+    .eq('id', supportActionId)
+
+  if (error) return { error: error.message }
   return {}
 }
 
