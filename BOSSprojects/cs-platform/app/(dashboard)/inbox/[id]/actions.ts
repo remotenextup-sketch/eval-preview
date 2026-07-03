@@ -83,7 +83,7 @@ export async function updateStatus(inquiryId: string, status: InquiryStatus, sno
 export async function sendReply(
   inquiryId: string,
   body: string,
-  statusAction: 'only' | 'pending' | 'pending_monday' | 'resolved' = 'only',
+  statusAction: 'only' | 'pending' | 'pending_tomorrow' | 'pending_monday' | 'resolved' = 'only',
   isAiDraft = false,
   aiModified = false,
 ): Promise<{ error?: string }> {
@@ -179,7 +179,7 @@ export async function sendReply(
   }
 
   if (statusAction !== 'only') {
-    const status: InquiryStatus = statusAction === 'pending_monday' ? 'pending' : statusAction
+    const status: InquiryStatus = (statusAction === 'pending_monday' || statusAction === 'pending_tomorrow') ? 'pending' : statusAction
     const { data: current } = await supabase
       .from('inquiries')
       .select('status')
@@ -189,7 +189,7 @@ export async function sendReply(
     await supabase.from('inquiries').update({
       status,
       resolved_at: status === 'resolved' ? new Date().toISOString() : null,
-      snooze_until: statusAction === 'pending_monday' ? nextMondayAt8amJST() : null,
+      snooze_until: statusAction === 'pending_monday' ? nextMondayAt8amJST() : statusAction === 'pending_tomorrow' ? tomorrowAt8amJST() : null,
       locked_by: null,
       locked_at: null,
     }).eq('id', inquiryId)

@@ -4,7 +4,7 @@ import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { sendReply, acquireLock, releaseLock, scheduleReply } from './actions'
 
-type SendAction = 'pending' | 'pending_monday' | 'resolved'
+type SendAction = 'pending' | 'pending_tomorrow' | 'pending_monday' | 'resolved'
 
 type LockStatus =
   | { state: 'unlocked' }
@@ -222,6 +222,13 @@ export function ReplyForm({
             className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-md disabled:opacity-50 transition-colors"
           >
             保留
+          </button>
+          <button
+            onClick={() => handleSend('pending_tomorrow')}
+            disabled={!canSend}
+            className="text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 px-3 py-1.5 rounded-md disabled:opacity-50 transition-colors"
+          >
+            スヌーズ（翌日）
           </button>
           <button
             onClick={() => handleSend('pending_monday')}
