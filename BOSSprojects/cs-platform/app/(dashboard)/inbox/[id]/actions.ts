@@ -493,6 +493,38 @@ export async function generateAiDraft(inquiryId: string): Promise<{ draft: strin
   return { draft, aiLogId }
 }
 
+export async function scheduleReply(
+  inquiryId: string,
+  body: string,
+  scheduledAt: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証エラー' }
+
+  const { error } = await supabase
+    .from('inquiries')
+    .update({
+      scheduled_reply_body: body,
+      scheduled_reply_at: scheduledAt,
+    })
+    .eq('id', inquiryId)
+
+  if (error) return { error: error.message }
+
+  await supabase.from('activity_logs').insert({
+    inquiry_id: inquiryId,
+    actor_id: user.id,
+    action: 'scheduled_reply',
+    before_val: null,
+    after_val: { scheduled_at: scheduledAt },
+  })
+
+  revalidatePath(`/inbox/${inquiryId}`)
+  revalidatePath('/inbox')
+  return {}
+}
+
 export async function submitAiDraftFeedback(
   inquiryId: string,
   aiLogId: string,

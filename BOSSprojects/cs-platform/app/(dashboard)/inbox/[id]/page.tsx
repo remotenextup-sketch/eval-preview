@@ -82,6 +82,7 @@ const ACTION_LABELS: Record<string, string> = {
   unlocked: '対応ロックを解除',
   lock_expired: 'ロック期限切れ（強制解除）',
   snooze_expired: 'スヌーズ期限到来',
+  scheduled_reply: '送信予約',
 }
 
 function afterStatus(v: Record<string, unknown> | null): string | null {

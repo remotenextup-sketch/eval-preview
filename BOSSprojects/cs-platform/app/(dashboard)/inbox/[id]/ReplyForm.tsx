@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { sendReply, acquireLock, releaseLock } from './actions'
+import { sendReply, acquireLock, releaseLock, scheduleReply } from './actions'
 
 type SendAction = 'pending' | 'pending_monday' | 'resolved'
 
@@ -24,6 +24,12 @@ function deriveInitialLockStatus(
   if (expired) return { state: 'unlocked' }
   if (lockedById === currentUserId) return { state: 'locked_by_me' }
   return { state: 'locked_by_other', lockedByName: lockedByName ?? '他のユーザー' }
+}
+
+function localDatetimeMin(): string {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + 1)
+  return now.toISOString().slice(0, 16)
 }
 
 type Props = {
@@ -50,9 +56,13 @@ export function ReplyForm({
   const [sendError, setSendError] = useState<string | null>(null)
   const [isSending, startSendTransition] = useTransition()
   const [isLocking, startLockTransition] = useTransition()
+  const [isScheduling, startScheduleTransition] = useTransition()
   const [lockStatus, setLockStatus] = useState<LockStatus>(() =>
     deriveInitialLockStatus(currentUserId, initialLockedById, initialLockedByName, initialLockedAt)
   )
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   const lockAttempted = useRef(false)
 
   const tryAcquireLock = useCallback(() => {
@@ -120,10 +130,29 @@ export function ReplyForm({
     })
   }
 
-  const isPending = isSending || isLocking
+  function handleScheduleConfirm() {
+    if (!body.trim() || !scheduleAt) return
+    setScheduleError(null)
+    startScheduleTransition(async () => {
+      const result = await scheduleReply(inquiryId, body.trim(), new Date(scheduleAt).toISOString())
+      if (result.error) {
+        setScheduleError(result.error)
+      } else {
+        setShowSchedule(false)
+        setScheduleAt('')
+        setBody('')
+        setAiDraftInserted(false)
+        setAiDraftModified(false)
+        router.refresh()
+      }
+    })
+  }
+
+  const isPending = isSending || isLocking || isScheduling
   const isOtherLocked = lockStatus.state === 'locked_by_other'
   const isMeLocked = lockStatus.state === 'locked_by_me'
   const canSend = isMeLocked && body.trim().length > 0 && !isPending
+  const canSchedule = body.trim().length > 0 && !isOtherLocked && !isPending
 
   return (
     <div className="flex-shrink-0 border-t border-gray-200 bg-white px-4 py-3">
@@ -179,7 +208,14 @@ export function ReplyForm({
       />
 
       {!isOtherLocked && (
-        <div className="flex items-center justify-end gap-2 mt-2">
+        <div className="flex items-center justify-end gap-2 mt-2 flex-wrap">
+          <button
+            onClick={() => { setShowSchedule(v => !v); setScheduleError(null) }}
+            disabled={!canSchedule}
+            className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1.5 rounded-md disabled:opacity-50 transition-colors"
+          >
+            送信予約
+          </button>
           <button
             onClick={() => handleSend('pending')}
             disabled={!canSend}
@@ -201,6 +237,38 @@ export function ReplyForm({
           >
             {isSending ? '送信中...' : '送信して対応完了'}
           </button>
+        </div>
+      )}
+
+      {showSchedule && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-md space-y-2">
+          <p className="text-xs font-semibold text-amber-800">送信日時を選択</p>
+          <input
+            type="datetime-local"
+            value={scheduleAt}
+            onChange={(e) => setScheduleAt(e.target.value)}
+            min={localDatetimeMin()}
+            className="w-full text-xs border border-amber-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+          />
+          {scheduleError && (
+            <p className="text-xs text-red-500">{scheduleError}</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={handleScheduleConfirm}
+              disabled={!scheduleAt || !body.trim() || isScheduling}
+              className="flex-1 text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md disabled:opacity-50 transition-colors"
+            >
+              {isScheduling ? '保存中...' : '予約確定'}
+            </button>
+            <button
+              onClick={() => { setShowSchedule(false); setScheduleAt(''); setScheduleError(null) }}
+              disabled={isScheduling}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 disabled:opacity-50"
+            >
+              キャンセル
+            </button>
+          </div>
         </div>
       )}
     </div>

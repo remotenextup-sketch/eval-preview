@@ -78,7 +78,7 @@ export async function InquiryListPanel({ currentStatus, tagId, q, mine, selected
   // Main inquiry query
   let query = supabase
     .from('inquiries')
-    .select('id, customer_name, subject, order_number, status, source_channel, received_at, is_angry, needs_human')
+    .select('id, customer_name, subject, order_number, status, source_channel, received_at, is_angry, needs_human, scheduled_reply_at')
     .eq('status', currentStatus)
     .order('received_at', { ascending: true })
 
@@ -178,6 +178,9 @@ export async function InquiryListPanel({ currentStatus, tagId, q, mine, selected
                 )}
                 {inq.needs_human && (
                   <span className="text-xs bg-orange-500 text-white rounded px-1.5 py-0.5 font-semibold">⚠ 要対応</span>
+                )}
+                {inq.scheduled_reply_at && (
+                  <span className="text-xs bg-amber-100 text-amber-700 rounded px-1.5 py-0.5 font-medium">📅 送信予約</span>
                 )}
                 {inq.source_channel && (() => {
                   const ch = channelMeta[inq.source_channel] ?? { label: inq.source_channel, className: 'bg-gray-100 text-gray-500' }
