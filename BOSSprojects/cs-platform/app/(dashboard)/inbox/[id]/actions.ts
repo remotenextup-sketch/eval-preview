@@ -26,13 +26,31 @@ function tomorrowAt8amJST(): string {
   return new Date(todayMidnightJST + (24 + 8) * 60 * 60 * 1000 - JST).toISOString()
 }
 
-function nextMondayAt8amJST(): string {
+async function nextBusinessMondayAt8amJST(): Promise<string> {
   const JST = 9 * 60 * 60 * 1000
   const nowJST = Date.now() + JST
   const todayMidnightJST = nowJST - (nowJST % (24 * 60 * 60 * 1000))
-  const dayOfWeek = new Date(nowJST).getUTCDay() // 0=Sun,1=Mon,...6=Sat in JST
+  const dayOfWeek = new Date(nowJST).getUTCDay()
   const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek
-  return new Date(todayMidnightJST + (daysUntilMonday * 24 + 8) * 60 * 60 * 1000 - JST).toISOString()
+  let targetMidnightJST = todayMidnightJST + daysUntilMonday * 24 * 60 * 60 * 1000
+
+  // 祝日チェック（失敗時は月曜のまま）
+  try {
+    const res = await fetch('https://holidays-jp.github.io/api/v1/date.json')
+    if (res.ok) {
+      const holidays: Record<string, string> = await res.json()
+      for (let i = 0; i < 7; i++) {
+        const dateStr = new Date(targetMidnightJST).toISOString().slice(0, 10)
+        const dow = new Date(targetMidnightJST).getUTCDay()
+        if (dow !== 0 && dow !== 6 && !holidays[dateStr]) break
+        targetMidnightJST += 24 * 60 * 60 * 1000
+      }
+    }
+  } catch {
+    // API失敗 → そのまま月曜
+  }
+
+  return new Date(targetMidnightJST + 8 * 60 * 60 * 1000 - JST).toISOString()
 }
 
 export async function updateStatus(inquiryId: string, status: InquiryStatus, snooze?: boolean) {
@@ -180,6 +198,9 @@ export async function sendReply(
 
   if (statusAction !== 'only') {
     const status: InquiryStatus = (statusAction === 'pending_monday' || statusAction === 'pending_tomorrow') ? 'pending' : statusAction
+    const snoozeUntil = statusAction === 'pending_monday' ? await nextBusinessMondayAt8amJST()
+      : statusAction === 'pending_tomorrow' ? tomorrowAt8amJST()
+      : null
     const { data: current } = await supabase
       .from('inquiries')
       .select('status')
@@ -189,7 +210,7 @@ export async function sendReply(
     await supabase.from('inquiries').update({
       status,
       resolved_at: status === 'resolved' ? new Date().toISOString() : null,
-      snooze_until: statusAction === 'pending_monday' ? nextMondayAt8amJST() : statusAction === 'pending_tomorrow' ? tomorrowAt8amJST() : null,
+      snooze_until: snoozeUntil,
       locked_by: null,
       locked_at: null,
     }).eq('id', inquiryId)
