@@ -748,6 +748,7 @@ export type Database = {
       knowledge_cases: {
         Row: {
           answer: string | null
+          confidence: number | null
           created_at: string | null
           id: number
           image_ref: string | null
@@ -756,10 +757,13 @@ export type Database = {
           question: string | null
           reply_body: string | null
           source: string | null
+          status: string | null
+          success_count: number | null
           updated_at: string | null
         }
         Insert: {
           answer?: string | null
+          confidence?: number | null
           created_at?: string | null
           id?: number
           image_ref?: string | null
@@ -768,10 +772,13 @@ export type Database = {
           question?: string | null
           reply_body?: string | null
           source?: string | null
+          status?: string | null
+          success_count?: number | null
           updated_at?: string | null
         }
         Update: {
           answer?: string | null
+          confidence?: number | null
           created_at?: string | null
           id?: number
           image_ref?: string | null
@@ -780,6 +787,8 @@ export type Database = {
           question?: string | null
           reply_body?: string | null
           source?: string | null
+          status?: string | null
+          success_count?: number | null
           updated_at?: string | null
         }
         Relationships: []
