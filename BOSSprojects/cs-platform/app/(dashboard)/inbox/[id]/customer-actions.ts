@@ -56,7 +56,7 @@ export async function createCustomerProfileFromInquiry(
 
   if (!profile) return { error: 'プロフィール作成に失敗しました' }
 
-  const channel: SourceChannel = inq.source_channel ?? 'manual'
+  const channel: SourceChannel = (inq.source_channel as SourceChannel) ?? 'manual'
   const identities: Array<{
     customer_profile_id: string
     channel: SourceChannel

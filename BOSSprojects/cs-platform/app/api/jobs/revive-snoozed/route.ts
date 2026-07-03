@@ -50,8 +50,8 @@ export async function GET(request: Request) {
     inquiry_id: id,
     actor_id: null as string | null,
     action: 'snooze_expired' as const,
-    before_val: { status: 'pending' } as Record<string, unknown>,
-    after_val: { from: 'pending', to: 'open' } as Record<string, unknown>,
+    before_val: { status: 'pending' } as unknown as import('@/lib/types').Json,
+    after_val: { from: 'pending', to: 'open' } as unknown as import('@/lib/types').Json,
   }))
 
   await supabase.from('activity_logs').insert(logs)

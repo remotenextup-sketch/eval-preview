@@ -148,7 +148,7 @@ export async function sendReply(
       actor_id: user.id,
       action: 'rakuten_reply_dry_run',
       before_val: null,
-      after_val: (proxyData.payload ?? null) as Record<string, unknown> | null,
+      after_val: (proxyData.payload ?? null) as unknown as import('@/lib/types').Json,
     })
 
     await supabase.from('activity_logs').insert({
@@ -577,7 +577,7 @@ export async function submitAiDraftFeedback(
     .eq('id', aiLogId)
     .single()
 
-  const updateData: { feedback: AiLogFeedback; feedback_at: string; result?: Record<string, unknown> } = {
+  const updateData: { feedback: AiLogFeedback; feedback_at: string; result?: import('@/lib/types').Json } = {
     feedback,
     feedback_at: new Date().toISOString(),
   }
@@ -586,7 +586,7 @@ export async function submitAiDraftFeedback(
     updateData.result = {
       ...(typeof aiLog?.result === 'object' && aiLog.result ? aiLog.result as Record<string, unknown> : {}),
       draft: options.editedBody,
-    }
+    } as import('@/lib/types').Json
   }
 
   await supabase.from('ai_logs').update(updateData).eq('id', aiLogId)

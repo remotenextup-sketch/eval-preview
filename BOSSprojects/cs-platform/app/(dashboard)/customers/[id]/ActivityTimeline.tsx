@@ -19,8 +19,10 @@ function formatDate(iso: string) {
 
 function LogDetail({ log }: { log: DbCustomerActivityLog }) {
   if (log.action === 'customer_merged') {
-    const sourceId = log.before_val?.source_customer_id as string | undefined
-    const movedInquiries = log.after_val?.moved_inquiries as number | undefined
+    const before = log.before_val as Record<string, unknown> | null
+    const after = log.after_val as Record<string, unknown> | null
+    const sourceId = before?.source_customer_id as string | undefined
+    const movedInquiries = after?.moved_inquiries as number | undefined
     return (
       <div className="text-xs text-gray-500 space-y-0.5 mt-1">
         {sourceId && <p>統合元: <span className="font-mono">{sourceId}</span></p>}
@@ -30,7 +32,9 @@ function LogDetail({ log }: { log: DbCustomerActivityLog }) {
   }
 
   if (log.action === 'tag_added' || log.action === 'tag_removed') {
-    const tag = (log.after_val?.tag ?? log.before_val?.tag) as string | undefined
+    const after = log.after_val as Record<string, unknown> | null
+    const before = log.before_val as Record<string, unknown> | null
+    const tag = (after?.tag ?? before?.tag) as string | undefined
     return tag ? <p className="text-xs text-gray-500 mt-1">{tag}</p> : null
   }
 
