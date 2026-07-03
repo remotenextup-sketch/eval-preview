@@ -93,7 +93,7 @@ export async function sendReply(
 
   const { data: inq } = await supabase
     .from('inquiries')
-    .select('source_channel, external_id')
+    .select('source_channel, external_id, item_name, raw_payload')
     .eq('id', inquiryId)
     .single()
 
@@ -216,6 +216,38 @@ export async function sendReply(
 
   revalidatePath(`/inbox/${inquiryId}`)
   revalidatePath('/inbox')
+
+  // knowledge_cases 自動保存（失敗しても sendReply を止めない）
+  try {
+    const rawPayload = inq.raw_payload as Record<string, unknown> | null
+    const question = typeof rawPayload?.message === 'string' ? rawPayload.message : null
+
+    let kcSource: string
+    let kcConfidence: number
+    let kcStatus: string
+    if (isAiDraft && !aiModified) {
+      kcSource = 'auto'; kcConfidence = 0.7; kcStatus = 'candidate'
+    } else if (isAiDraft && aiModified) {
+      kcSource = 'auto_edited'; kcConfidence = 0.85; kcStatus = 'active'
+    } else {
+      kcSource = 'manual'; kcConfidence = 0.9; kcStatus = 'active'
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (createKnowledgeClient() as any).from('knowledge_cases').insert({
+      product_name: inq.item_name ?? null,
+      question,
+      answer: body,
+      reply_body: body,
+      source: kcSource,
+      confidence: kcConfidence,
+      status: kcStatus,
+      needs_sync: false,
+    })
+  } catch (e) {
+    console.error('[sendReply] knowledge_cases auto-save failed:', e)
+  }
+
   return {}
 }
 
@@ -379,33 +411,37 @@ export async function generateAiDraft(inquiryId: string): Promise<{ draft: strin
   if (mainKeyword) {
     const kb = createKnowledgeClient()
     try {
-      // knowledge_cases: question → answer → product_name の優先順で検索
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const kba = kb as any
-      const caseByQuestion = await kba.from('knowledge_cases')
-        .select('product_name, question, reply_body')
-        .ilike('question', `%${mainKeyword}%`)
-        .not('reply_body', 'is', null)
-        .limit(1)
-      matchedCase = caseByQuestion.data?.[0] ?? null
 
-      if (!matchedCase) {
-        const caseByAnswer = await kba.from('knowledge_cases')
+      // status='active' 優先 → なければ全件、ORDER BY confidence DESC, success_count DESC, updated_at DESC
+      async function searchCase(col: string, keyword: string): Promise<KnowledgeCase | null> {
+        const base = kba.from('knowledge_cases')
           .select('product_name, question, reply_body')
-          .ilike('answer', `%${mainKeyword}%`)
+          .ilike(col, `%${keyword}%`)
           .not('reply_body', 'is', null)
+        const active = await base
+          .eq('status', 'active')
+          .order('confidence', { ascending: false })
+          .order('success_count', { ascending: false })
+          .order('updated_at', { ascending: false })
           .limit(1)
-        matchedCase = caseByAnswer.data?.[0] ?? null
+        if (active.data?.[0]) return active.data[0]
+        const all = await kba.from('knowledge_cases')
+          .select('product_name, question, reply_body')
+          .ilike(col, `%${keyword}%`)
+          .not('reply_body', 'is', null)
+          .order('confidence', { ascending: false })
+          .order('success_count', { ascending: false })
+          .order('updated_at', { ascending: false })
+          .limit(1)
+        return all.data?.[0] ?? null
       }
 
-      if (!matchedCase) {
-        const caseByProduct = await kba.from('knowledge_cases')
-          .select('product_name, question, reply_body')
-          .ilike('product_name', `%${mainKeyword}%`)
-          .not('reply_body', 'is', null)
-          .limit(1)
-        matchedCase = caseByProduct.data?.[0] ?? null
-      }
+      // knowledge_cases: question → answer → product_name の優先順で検索
+      matchedCase = await searchCase('question', mainKeyword)
+      if (!matchedCase) matchedCase = await searchCase('answer', mainKeyword)
+      if (!matchedCase) matchedCase = await searchCase('product_name', mainKeyword)
 
       // knowledge_templates: synonyms → phrase の優先順で検索
       const tmplBySynonyms = await kba.from('knowledge_templates')
