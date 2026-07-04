@@ -577,18 +577,73 @@ export async function generateAiDraft(inquiryId: string): Promise<{ draft: strin
   const customerName = inq.customer_name ?? 'お客様'
   const salutation = `${customerName} 様\n\n`
 
-  // 2. knowledge_cases / knowledge_templates をキーワード検索
+  // 2. knowledge_cases / knowledge_templates / product_knowledge をキーワード検索
   type KnowledgeCase     = { product_name: string | null; question: string | null; reply_body: string | null }
   type KnowledgeTemplate = { phrase: string | null; body: string | null }
+  type ProductKnowledge  = { features: string | null; notes: string | null; campaign_name: string | null; present_summary: string | null; ai_notes: string | null; synonyms: string[] | null }
   let matchedCase:     KnowledgeCase     | null = null
   let matchedTemplate: KnowledgeTemplate | null = null
+  let matchedProductKnowledge: ProductKnowledge | null = null
+  let matchedReturnShippingFee: number | null = null
+
+  const kb = createKnowledgeClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const kba = kb as any
+
+  // product_knowledge lookup: SKU → product_name → synonyms
+  try {
+    const pkSelect = 'features, notes, campaign_name, present_summary, ai_notes, synonyms'
+    const itemName = inq.subject ?? ''
+    // 1. SKU一致
+    const skuMatch = await kba.from('products')
+      .select(`id, sku, return_shipping_fee, product_knowledge(${pkSelect})`)
+      .eq('is_active', true)
+      .eq('sku', itemName.trim())
+      .limit(1)
+      .maybeSingle()
+    if (skuMatch.data?.product_knowledge?.[0]) {
+      matchedProductKnowledge = skuMatch.data.product_knowledge[0]
+      matchedReturnShippingFee = skuMatch.data.return_shipping_fee ?? null
+    }
+
+    if (!matchedProductKnowledge && itemName) {
+      // 2. product_name 部分一致
+      const nameMatch = await kba.from('products')
+        .select(`id, return_shipping_fee, product_knowledge(${pkSelect})`)
+        .eq('is_active', true)
+        .ilike('product_name', `%${itemName}%`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (nameMatch.data?.product_knowledge?.[0]) {
+        matchedProductKnowledge = nameMatch.data.product_knowledge[0]
+        matchedReturnShippingFee = nameMatch.data.return_shipping_fee ?? null
+      }
+    }
+
+    if (!matchedProductKnowledge && mainKeyword) {
+      // 3. synonyms 配列にキーワード含む
+      const { data: pkRows } = await kba.from('product_knowledge')
+        .select(`${pkSelect}, product_id`)
+        .eq('is_active', true)
+        .contains('synonyms', [mainKeyword])
+        .order('priority', { ascending: false })
+        .limit(1)
+      if (pkRows?.[0]) {
+        matchedProductKnowledge = pkRows[0]
+        const { data: prodRow } = await kba.from('products')
+          .select('return_shipping_fee')
+          .eq('id', pkRows[0].product_id)
+          .maybeSingle()
+        matchedReturnShippingFee = prodRow?.return_shipping_fee ?? null
+      }
+    }
+  } catch (e) {
+    console.error('[generateAiDraft] product_knowledge search error:', e)
+  }
 
   if (mainKeyword) {
-    const kb = createKnowledgeClient()
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const kba = kb as any
-
       // status='active' 優先 → なければ全件、ORDER BY confidence DESC, success_count DESC, updated_at DESC
       async function searchCase(col: string, keyword: string): Promise<KnowledgeCase | null> {
         const base = kba.from('knowledge_cases')
@@ -638,6 +693,18 @@ export async function generateAiDraft(inquiryId: string): Promise<{ draft: strin
   }
 
   // 3. 返信案の組み立て
+  // product_knowledge コンテキストを付記（draft末尾ではなくメモとして渡す）
+  const pkContext: string[] = []
+  if (matchedProductKnowledge) {
+    if (matchedProductKnowledge.features) pkContext.push(`商品特徴: ${matchedProductKnowledge.features}`)
+    if (matchedProductKnowledge.present_summary) pkContext.push(`プレゼント: ${matchedProductKnowledge.present_summary}`)
+    if (matchedProductKnowledge.campaign_name) pkContext.push(`キャンペーン: ${matchedProductKnowledge.campaign_name}`)
+    if (matchedProductKnowledge.notes) pkContext.push(`CS備考: ${matchedProductKnowledge.notes}`)
+  }
+  if (matchedReturnShippingFee != null) {
+    pkContext.push(`お客様都合の再送料: ¥${matchedReturnShippingFee.toLocaleString()}`)
+  }
+
   let draft = ''
 
   if (matchedCase?.reply_body) {
@@ -685,6 +752,8 @@ export async function generateAiDraft(inquiryId: string): Promise<{ draft: strin
         keyword: mainKeyword || null,
         case_question: matchedCase?.question ?? null,
         template_phrase: matchedTemplate?.phrase ?? null,
+        product_knowledge_used: matchedProductKnowledge != null,
+        pk_context: pkContext.length > 0 ? pkContext : null,
       },
       confidence: matchedCase ? 0.80 : matchedTemplate ? 0.65 : 0.40,
       latency_ms: Date.now() - startedAt,

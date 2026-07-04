@@ -18,6 +18,11 @@ import { channelMeta } from '@/lib/channel-meta'
 import { AddToCasesButton } from './AddToCasesButton'
 import { SupportActionsSection } from './SupportActionsSection'
 import type { SupportAction } from './SupportActionsSection'
+import { BossActionsSection } from './BossActionsSection'
+import type { BossAction } from './BossActionsSection'
+import { RefreshButton } from '@/components/inbox/RefreshButton'
+import { ChatworkShareButton } from './ChatworkShareButton'
+import { ChatworkShareHistory } from './ChatworkShareHistory'
 
 type UserOption = Pick<DbUser, 'id' | 'display_name'>
 
@@ -128,6 +133,11 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
     { data: rawInquiryTags },
     { data: rawAllTags },
     { data: rawSupportActions },
+    { data: rawBossActions },
+    { data: rawCwRooms },
+    { data: rawCwMembers },
+    { data: rawCwRoomMembers },
+    { data: rawCwShares },
   ] = await Promise.all([
     supabase.from('inquiry_messages')
       .select('*, sender:sender_id(id, display_name)')
@@ -163,6 +173,16 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
       .eq('inquiry_id', id)
       .neq('status', 'deleted')
       .order('created_at', { ascending: false }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('boss_actions').select('id, action_type, status, ai_suggested, ai_reason, error_message, executed_at, created_at').eq('inquiry_id', id).order('created_at', { ascending: false }).limit(10),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('chatwork_rooms').select('id, room_id, room_name').eq('is_active', true).order('created_at', { ascending: true }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('chatwork_members').select('id, account_id, display_name, mention_name').eq('is_active', true).order('display_name', { ascending: true }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('chatwork_room_members').select('room_id, member_id, is_default_mention'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('chatwork_shares').select('id, room_id, room_name, mentioned_names, comment, created_at').eq('inquiry_id', id).order('created_at', { ascending: false }).limit(20),
   ])
 
   const messages = (rawMessages ?? []) as unknown as MessageRow[]
@@ -170,10 +190,27 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
   const activityLogs = (rawLogs ?? []) as unknown as LogRow[]
   const users = (rawUsers ?? []) as unknown as UserOption[]
   const supportActions = (rawSupportActions ?? []) as unknown as SupportAction[]
+  const bossActions = (rawBossActions ?? []) as unknown as BossAction[]
+
+  // support_actions からAI提案を導出
+  const suggestExchange = supportActions.some(sa => sa.action_type === 'exchange')
+  const suggestCancel = supportActions.some(sa => ['refund', 'partial_refund'].includes(sa.action_type))
+  const suggestReason = supportActions.find(sa =>
+    ['exchange', 'refund', 'partial_refund'].includes(sa.action_type)
+  )?.reason_detail ?? null
   const latestAiLog = (rawAiLogs ?? [])[0] as unknown as AiLogRow | undefined
   const inquiryTagIds = new Set((rawInquiryTags ?? []).map((r) => (r as unknown as InquiryTagRow).tag_id))
   const allTags = (rawAllTags ?? []) as unknown as DbTag[]
   const currentTags = allTags.filter((t) => inquiryTagIds.has(t.id))
+
+  type CwRoom = { id: string; room_id: string; room_name: string }
+  type CwMember = { id: string; account_id: string; display_name: string; mention_name: string | null }
+  type CwRoomMember = { room_id: string; member_id: string; is_default_mention: boolean }
+  type CwShareRow = { id: string; room_id: string; room_name: string | null; mentioned_names: string[] | null; comment: string | null; created_at: string }
+  const cwRooms = (rawCwRooms ?? []) as unknown as CwRoom[]
+  const cwMembers = (rawCwMembers ?? []) as unknown as CwMember[]
+  const cwRoomMembers = (rawCwRoomMembers ?? []) as unknown as CwRoomMember[]
+  const cwShares = (rawCwShares ?? []) as unknown as CwShareRow[]
 
   const currentStatus = inq.status as InquiryStatus
 
@@ -251,6 +288,21 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
               </h1>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              <RefreshButton />
+              <ChatworkShareButton
+                inquiry={{
+                  id,
+                  subject: inq.subject ?? null,
+                  customer_name: inq.customer_name ?? null,
+                  order_number: inq.order_number ?? null,
+                  source_channel: inq.source_channel ?? null,
+                  body_excerpt: messages.find(m => m.direction === 'inbound')?.body?.slice(0, 300) ?? inq.subject ?? null,
+                }}
+                rooms={cwRooms}
+                members={cwMembers}
+                roomMembers={cwRoomMembers}
+                recentShares={cwShares}
+              />
               <AssigneeSelect inquiryId={id} currentAssigneeId={inq.assignee_id} users={users} lockedByOther={lockedByOther} />
               <StatusSelect inquiryId={id} currentStatus={currentStatus} />
             </div>
@@ -367,6 +419,25 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
               <ShippingStatusSection
                 orderNumber={inq.order_number ?? null}
                 order={shippingOrder}
+              />
+            </section>
+
+            <section className="p-4">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Chatwork共有</h3>
+              <ChatworkShareHistory shares={cwShares} />
+            </section>
+
+            <section className="p-4">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">BOSS処理</h3>
+              <BossActionsSection
+                inquiryId={id}
+                orderNumber={inq.order_number ?? null}
+                mall={inq.source_channel ?? null}
+                order={shippingOrder}
+                bossActions={bossActions}
+                suggestExchange={suggestExchange}
+                suggestCancel={suggestCancel}
+                suggestReason={suggestReason}
               />
             </section>
 

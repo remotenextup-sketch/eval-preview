@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { sendReply, acquireLock, releaseLock, scheduleReply } from './actions'
+import { emitToast } from '@/components/ui/toast-emitter'
 
 type SendAction = 'pending' | 'pending_tomorrow' | 'pending_monday' | 'resolved'
 
@@ -118,6 +119,7 @@ export function ReplyForm({
       const result = await sendReply(inquiryId, body.trim(), action, aiDraftInserted, aiDraftModified)
       if (result.error) {
         setSendError(result.error)
+        emitToast(result.error, 'error')
       } else {
         setSendError(null)
         setBody('')
@@ -125,6 +127,7 @@ export function ReplyForm({
         setAiDraftModified(false)
         setLockStatus({ state: 'unlocked' })
         lockAttempted.current = false
+        emitToast('返信を送信しました')
         router.refresh()
       }
     })
@@ -137,12 +140,14 @@ export function ReplyForm({
       const result = await scheduleReply(inquiryId, body.trim(), new Date(scheduleAt).toISOString())
       if (result.error) {
         setScheduleError(result.error)
+        emitToast(result.error, 'error')
       } else {
         setShowSchedule(false)
         setScheduleAt('')
         setBody('')
         setAiDraftInserted(false)
         setAiDraftModified(false)
+        emitToast('返信を予約しました')
         router.refresh()
       }
     })

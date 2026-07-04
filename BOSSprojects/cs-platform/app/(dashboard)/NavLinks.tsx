@@ -7,6 +7,8 @@ const NAV_ITEMS = [
   { label: '受信箱', href: '/inbox' },
   { label: '顧客', href: '/customers' },
   { label: '対応履歴', href: '/support-actions' },
+  { label: 'マスタ', href: '/master/products' },
+  { label: '設定', href: '/settings/chatwork' },
 ]
 
 export function NavLinks() {
@@ -14,7 +16,8 @@ export function NavLinks() {
   return (
     <nav className="flex items-center gap-1">
       {NAV_ITEMS.map(({ label, href }) => {
-        const isActive = pathname === href || pathname.startsWith(`${href}/`)
+        const matchBase = href === '/master/products' ? '/master' : href
+        const isActive = pathname === href || pathname.startsWith(`${matchBase}/`) || (href === '/master/products' && pathname === '/master')
         return (
           <Link
             key={href}

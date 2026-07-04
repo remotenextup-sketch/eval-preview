@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import type { InquiryStatus, SourceChannel } from '@/lib/types'
 import { channelMeta } from '@/lib/channel-meta'
+import { RefreshButton } from './RefreshButton'
 
 interface Props {
   currentStatus: InquiryStatus
@@ -146,8 +147,9 @@ export async function InquiryListPanel({ currentStatus, tagId, q, mine, selected
         })}
       </div>
 
-      <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0">
+      <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
         <p className="text-xs text-gray-400">{(inquiries ?? []).length} 件</p>
+        <RefreshButton showLabel={false} />
       </div>
 
       <div className="flex-1 overflow-y-auto">

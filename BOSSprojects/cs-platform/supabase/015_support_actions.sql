@@ -38,3 +38,17 @@ CREATE INDEX IF NOT EXISTS support_actions_inquiry_idx    ON support_actions (in
 CREATE INDEX IF NOT EXISTS support_actions_created_at_idx ON support_actions (created_at DESC);
 CREATE INDEX IF NOT EXISTS support_actions_status_idx     ON support_actions (status);
 CREATE INDEX IF NOT EXISTS support_actions_mall_idx       ON support_actions (mall);
+
+-- 権限設定
+ALTER TABLE public.support_actions ENABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON public.support_actions TO postgres;
+GRANT ALL ON public.support_actions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.support_actions TO authenticated;
+
+CREATE POLICY "allow_all_for_authenticated"
+  ON public.support_actions
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
