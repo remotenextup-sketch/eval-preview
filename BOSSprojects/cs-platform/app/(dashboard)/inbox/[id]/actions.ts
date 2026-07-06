@@ -985,6 +985,29 @@ export async function removeTag(inquiryId: string, tagId: string) {
   revalidatePath(`/inbox/${inquiryId}`)
 }
 
+export type TemplateItem = {
+  id: number
+  category: string
+  phrase: string
+  body: string
+  use_count: number
+}
+
+export async function fetchTemplates(): Promise<TemplateItem[]> {
+  const kb = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { data } = await kb
+    .from('knowledge_templates')
+    .select('id, category, phrase, body, use_count')
+    .order('use_count', { ascending: false })
+    .order('category', { ascending: true })
+  return (data ?? []) as TemplateItem[]
+}
+
+export async function recordTemplateUse(id: number): Promise<void> {
+  const kb = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  await kb.rpc('increment_template_use_count', { template_id: id })
+}
+
 export async function addToKnowledgeCases(
   inquiryMessageId: string,
   inquiryId: string,

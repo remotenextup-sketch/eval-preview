@@ -2,7 +2,8 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { sendReply, acquireLock, releaseLock, scheduleReply } from './actions'
+import { sendReply, acquireLock, releaseLock, scheduleReply, fetchTemplates, recordTemplateUse } from './actions'
+import type { TemplateItem } from './actions'
 import { emitToast } from '@/components/ui/toast-emitter'
 
 type SendAction = 'pending' | 'pending_tomorrow' | 'pending_monday' | 'resolved'
@@ -25,6 +26,91 @@ function deriveInitialLockStatus(
   if (expired) return { state: 'unlocked' }
   if (lockedById === currentUserId) return { state: 'locked_by_me' }
   return { state: 'locked_by_other', lockedByName: lockedByName ?? '他のユーザー' }
+}
+
+function TemplatePanel({
+  templates,
+  loading,
+  search,
+  onSearchChange,
+  onSelect,
+  onClose,
+}: {
+  templates: TemplateItem[] | null
+  loading: boolean
+  search: string
+  onSearchChange: (v: string) => void
+  onSelect: (t: TemplateItem) => void
+  onClose: () => void
+}) {
+  const filtered = (templates ?? []).filter(t =>
+    !search || t.phrase.includes(search) || t.category.includes(search) || t.body.includes(search)
+  )
+  const frequent = (templates ?? []).filter(t => t.use_count > 0).slice(0, 3)
+
+  const grouped = filtered.reduce<Record<string, TemplateItem[]>>((acc, t) => {
+    const cat = t.category || 'その他'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(t)
+    return acc
+  }, {})
+
+  return (
+    <div className="mb-2 border border-green-200 rounded-lg bg-green-50 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-green-200 bg-green-100">
+        <span className="text-xs font-semibold text-green-800">テンプレート選択</span>
+        <button onClick={onClose} className="text-green-600 hover:text-green-900 text-xs">✕</button>
+      </div>
+      <div className="px-3 py-2 border-b border-green-100">
+        <input
+          type="text"
+          value={search}
+          onChange={e => onSearchChange(e.target.value)}
+          placeholder="検索..."
+          className="w-full text-xs border border-green-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-green-400 bg-white"
+          autoFocus
+        />
+      </div>
+      <div className="max-h-64 overflow-y-auto">
+        {loading && (
+          <p className="text-xs text-gray-400 text-center py-4">読み込み中...</p>
+        )}
+        {!loading && !search && frequent.length > 0 && (
+          <div>
+            <p className="text-xs text-gray-400 px-3 pt-2 pb-1 font-semibold">よく使う</p>
+            {frequent.map(t => (
+              <TemplateRow key={`freq-${t.id}`} t={t} onSelect={onSelect} />
+            ))}
+            <div className="border-t border-green-100 mt-1" />
+          </div>
+        )}
+        {!loading && Object.entries(grouped).map(([cat, items]) => (
+          <div key={cat}>
+            <p className="text-xs text-gray-400 px-3 pt-2 pb-1 font-semibold">{cat}</p>
+            {items.map(t => (
+              <TemplateRow key={t.id} t={t} onSelect={onSelect} />
+            ))}
+          </div>
+        ))}
+        {!loading && filtered.length === 0 && (
+          <p className="text-xs text-gray-400 text-center py-4">テンプレートがありません</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TemplateRow({ t, onSelect }: { t: TemplateItem; onSelect: (t: TemplateItem) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(t)}
+      className="w-full text-left px-3 py-2 hover:bg-green-100 transition-colors group"
+    >
+      <p className="text-xs font-medium text-gray-800 group-hover:text-green-800 truncate">{t.phrase}</p>
+      <p className="text-xs text-gray-400 truncate mt-0.5">{t.body.slice(0, 60)}...</p>
+    </button>
+  )
 }
 
 function localDatetimeMin(): string {
@@ -64,6 +150,10 @@ export function ReplyForm({
   const [showSchedule, setShowSchedule] = useState(false)
   const [scheduleAt, setScheduleAt] = useState('')
   const [scheduleError, setScheduleError] = useState<string | null>(null)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [templates, setTemplates] = useState<TemplateItem[] | null>(null)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
   const lockAttempted = useRef(false)
 
   const tryAcquireLock = useCallback(() => {
@@ -80,6 +170,24 @@ export function ReplyForm({
       }
     })
   }, [inquiryId, lockStatus.state])
+
+  async function handleOpenTemplates() {
+    setShowTemplates(v => !v)
+    if (templates === null) {
+      setLoadingTemplates(true)
+      const list = await fetchTemplates()
+      setTemplates(list)
+      setLoadingTemplates(false)
+    }
+  }
+
+  function handleSelectTemplate(t: TemplateItem) {
+    setBody(prev => prev.trim() ? `${prev}\n\n${t.body}` : t.body)
+    setShowTemplates(false)
+    setTemplateSearch('')
+    tryAcquireLock()
+    recordTemplateUse(t.id)
+  }
 
   useEffect(() => {
     function onAiDraftInsert(e: Event) {
@@ -192,15 +300,38 @@ export function ReplyForm({
         </div>
       )}
 
-      {aiDraftBody && !isOtherLocked && (
-        <button
-          type="button"
-          onClick={() => { setBody(aiDraftBody); setAiDraftInserted(true); setAiDraftModified(false); tryAcquireLock() }}
-          className="mb-2 text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1 transition-colors"
-        >
-          <span className="text-purple-400">▲</span>
-          AI下書きを挿入
-        </button>
+      {!isOtherLocked && (
+        <div className="mb-2 flex items-center gap-3">
+          {aiDraftBody && (
+            <button
+              type="button"
+              onClick={() => { setBody(aiDraftBody); setAiDraftInserted(true); setAiDraftModified(false); tryAcquireLock() }}
+              className="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1 transition-colors"
+            >
+              <span className="text-purple-400">▲</span>
+              AI下書きを挿入
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleOpenTemplates}
+            className="text-xs text-green-600 hover:text-green-800 flex items-center gap-1 transition-colors"
+          >
+            <span className="text-green-400">☰</span>
+            テンプレ
+          </button>
+        </div>
+      )}
+
+      {showTemplates && !isOtherLocked && (
+        <TemplatePanel
+          templates={templates}
+          loading={loadingTemplates}
+          search={templateSearch}
+          onSearchChange={setTemplateSearch}
+          onSelect={handleSelectTemplate}
+          onClose={() => { setShowTemplates(false); setTemplateSearch('') }}
+        />
       )}
 
       <textarea
