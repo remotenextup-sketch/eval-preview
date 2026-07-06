@@ -500,17 +500,17 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
                                   </button>
                                 </div>
                               ) : (
-                                <div className="flex items-center gap-1 group">
+                                <div className="flex items-center gap-1.5">
                                   <span className="text-xs text-gray-500 min-w-0 truncate">
-                                    {member.mention_name ?? <span className="text-gray-300">—</span>}
+                                    {member.mention_name || <span className="text-gray-300">未入力</span>}
                                   </span>
                                   <button
                                     onClick={() => handleStartEditNote(member)}
                                     disabled={!!editingMemberId || !!editingNoteId}
                                     title="備考を編集"
-                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500 disabled:opacity-0 transition-opacity shrink-0 ml-1"
+                                    className="text-gray-400 hover:text-blue-500 disabled:opacity-30 shrink-0"
                                   >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
                                       <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
                                     </svg>
                                   </button>
