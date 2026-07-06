@@ -407,17 +407,29 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
 
       {/* Section 3: メンバー管理 */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">メンバー管理</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700">メンバー管理</h2>
+          {members.length > 0 && (
+            <span className="text-xs text-gray-400">全 {members.length} 名</span>
+          )}
+        </div>
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {members.length > 0 ? (
-            <div className="overflow-y-scroll" style={{ maxHeight: '420px' }}>
+            <div
+              className="overflow-y-scroll"
+              style={{
+                maxHeight: '260px',
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#d1d5db #f3f4f6',
+              }}
+            >
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                   <tr>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 w-32">アカウントID</th>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">表示名</th>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">備考</th>
-                    <th className="px-4 py-2 w-24" />
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 w-28">アカウントID</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 w-28">表示名</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">備考</th>
+                    <th className="px-3 py-2 w-20" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -425,32 +437,32 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
                     const isEditing = editingMemberId === member.id
                     const isEditingNote = editingNoteId === member.id
                     return (
-                      <tr key={member.id} className={isEditing ? 'bg-blue-50' : ''}>
+                      <tr key={member.id} className={isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'}>
                         {isEditing ? (
                           <>
-                            <td className="px-2 py-1.5">
+                            <td className="px-2 py-1">
                               <input
                                 value={editAccountId}
                                 onChange={e => setEditAccountId(e.target.value)}
-                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-full border border-gray-300 rounded px-2 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                             </td>
-                            <td className="px-2 py-1.5">
+                            <td className="px-2 py-1">
                               <input
                                 value={editDisplayName}
                                 onChange={e => setEditDisplayName(e.target.value)}
-                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-full border border-gray-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                             </td>
-                            <td className="px-2 py-1.5">
+                            <td className="px-2 py-1">
                               <input
                                 value={editMentionName}
                                 onChange={e => setEditMentionName(e.target.value)}
                                 placeholder="備考（任意）"
-                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-full border border-gray-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                             </td>
-                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            <td className="px-2 py-1 text-right whitespace-nowrap">
                               <button
                                 onClick={() => handleSaveEditMember(member.id)}
                                 disabled={isPendingEditMember || !editAccountId.trim() || !editDisplayName.trim()}
@@ -463,15 +475,15 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
                                 disabled={isPendingEditMember}
                                 className="text-xs text-gray-500 hover:text-gray-700"
                               >
-                                キャンセル
+                                ✕
                               </button>
                             </td>
                           </>
                         ) : (
                           <>
-                            <td className="px-4 py-2 text-xs font-mono text-gray-600">{member.account_id}</td>
-                            <td className="px-4 py-2 text-xs text-gray-800">{member.display_name}</td>
-                            <td className="px-2 py-1.5">
+                            <td className="px-3 py-1.5 text-xs font-mono text-gray-500 max-w-[7rem] truncate">{member.account_id}</td>
+                            <td className="px-3 py-1.5 text-xs text-gray-800 font-medium">{member.display_name}</td>
+                            <td className="px-3 py-1.5">
                               {isEditingNote ? (
                                 <div className="flex items-center gap-1">
                                   <input
@@ -500,35 +512,36 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
                                   </button>
                                 </div>
                               ) : (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs text-gray-500 min-w-0 truncate">
-                                    {member.mention_name || <span className="text-gray-300">未入力</span>}
+                                <button
+                                  onClick={() => handleStartEditNote(member)}
+                                  disabled={!!editingMemberId || !!editingNoteId}
+                                  title="クリックして備考を編集"
+                                  className="flex items-center gap-1 text-left w-full group disabled:cursor-default"
+                                >
+                                  <span className="text-xs truncate">
+                                    {member.mention_name
+                                      ? <span className="text-gray-700">{member.mention_name}</span>
+                                      : <span className="text-gray-300">未入力</span>
+                                    }
                                   </span>
-                                  <button
-                                    onClick={() => handleStartEditNote(member)}
-                                    disabled={!!editingMemberId || !!editingNoteId}
-                                    title="備考を編集"
-                                    className="text-gray-400 hover:text-blue-500 disabled:opacity-30 shrink-0"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                    </svg>
-                                  </button>
-                                </div>
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-gray-300 group-hover:text-blue-400 shrink-0 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                                  </svg>
+                                </button>
                               )}
                             </td>
-                            <td className="px-4 py-2 text-right whitespace-nowrap">
+                            <td className="px-3 py-1.5 text-right whitespace-nowrap">
                               <button
                                 onClick={() => handleStartEditMember(member)}
                                 disabled={isPendingDelMember || !!editingMemberId || !!editingNoteId}
-                                className="text-xs text-blue-500 hover:text-blue-700 disabled:opacity-50 mr-3"
+                                className="text-xs text-blue-500 hover:text-blue-700 disabled:opacity-30 mr-2"
                               >
                                 編集
                               </button>
                               <button
                                 onClick={() => handleDeleteMember(member.id)}
                                 disabled={isPendingDelMember || !!editingMemberId || !!editingNoteId}
-                                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                                className="text-xs text-red-400 hover:text-red-600 disabled:opacity-30"
                               >
                                 削除
                               </button>
