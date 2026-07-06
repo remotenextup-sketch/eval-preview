@@ -50,6 +50,11 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
   const [memberMsg, setMemberMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [isPendingMember, startMemberTransition] = useTransition()
   const [isPendingDelMember, startDelMemberTransition] = useTransition()
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
+  const [editAccountId, setEditAccountId] = useState('')
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [editMentionName, setEditMentionName] = useState('')
+  const [isPendingEditMember, startEditMemberTransition] = useTransition()
 
   // Section 4: ルームとメンバーの紐付け
   const [roomMemberMsg, setRoomMemberMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -138,6 +143,37 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
         setMemberMsg({ ok: false, text: result.error })
       } else {
         setMemberMsg({ ok: true, text: 'メンバーを削除しました' })
+      }
+    })
+  }
+
+  function handleStartEditMember(member: CwMember) {
+    setEditingMemberId(member.id)
+    setEditAccountId(member.account_id)
+    setEditDisplayName(member.display_name)
+    setEditMentionName(member.mention_name ?? '')
+    setMemberMsg(null)
+  }
+
+  function handleCancelEditMember() {
+    setEditingMemberId(null)
+  }
+
+  function handleSaveEditMember(id: string) {
+    if (!editAccountId.trim() || !editDisplayName.trim()) return
+    setMemberMsg(null)
+    startEditMemberTransition(async () => {
+      const result = await upsertMember({
+        id,
+        account_id: editAccountId.trim(),
+        display_name: editDisplayName.trim(),
+        mention_name: editMentionName.trim() || undefined,
+      })
+      if (result.error) {
+        setMemberMsg({ ok: false, text: result.error })
+      } else {
+        setMemberMsg({ ok: true, text: '更新しました' })
+        setEditingMemberId(null)
       }
     })
   }
@@ -328,34 +364,91 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
         <h2 className="text-sm font-semibold text-gray-700 mb-3">メンバー管理</h2>
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {members.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">アカウントID</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">表示名</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">備考</th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {members.map(member => (
-                  <tr key={member.id}>
-                    <td className="px-4 py-2 text-xs font-mono text-gray-600">{member.account_id}</td>
-                    <td className="px-4 py-2 text-xs text-gray-800">{member.display_name}</td>
-                    <td className="px-4 py-2 text-xs text-gray-500">{member.mention_name ?? '—'}</td>
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        onClick={() => handleDeleteMember(member.id)}
-                        disabled={isPendingDelMember}
-                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                      >
-                        削除
-                      </button>
-                    </td>
+            <div className="overflow-y-auto max-h-80">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                  <tr>
+                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">アカウントID</th>
+                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">表示名</th>
+                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">備考</th>
+                    <th className="px-4 py-2" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {members.map(member => {
+                    const isEditing = editingMemberId === member.id
+                    return (
+                      <tr key={member.id} className={isEditing ? 'bg-blue-50' : ''}>
+                        {isEditing ? (
+                          <>
+                            <td className="px-2 py-1.5">
+                              <input
+                                value={editAccountId}
+                                onChange={e => setEditAccountId(e.target.value)}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                value={editDisplayName}
+                                onChange={e => setEditDisplayName(e.target.value)}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                value={editMentionName}
+                                onChange={e => setEditMentionName(e.target.value)}
+                                placeholder="備考（任意）"
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => handleSaveEditMember(member.id)}
+                                disabled={isPendingEditMember || !editAccountId.trim() || !editDisplayName.trim()}
+                                className="text-xs text-white bg-blue-600 rounded px-2 py-0.5 mr-1 hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {isPendingEditMember ? '...' : '保存'}
+                              </button>
+                              <button
+                                onClick={handleCancelEditMember}
+                                disabled={isPendingEditMember}
+                                className="text-xs text-gray-500 hover:text-gray-700"
+                              >
+                                キャンセル
+                              </button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-2 text-xs font-mono text-gray-600">{member.account_id}</td>
+                            <td className="px-4 py-2 text-xs text-gray-800">{member.display_name}</td>
+                            <td className="px-4 py-2 text-xs text-gray-500">{member.mention_name ?? '—'}</td>
+                            <td className="px-4 py-2 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => handleStartEditMember(member)}
+                                disabled={isPendingDelMember || !!editingMemberId}
+                                className="text-xs text-blue-500 hover:text-blue-700 disabled:opacity-50 mr-3"
+                              >
+                                編集
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMember(member.id)}
+                                disabled={isPendingDelMember || !!editingMemberId}
+                                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                              >
+                                削除
+                              </button>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <p className="text-xs text-gray-400 p-4">メンバーが登録されていません</p>
           )}
