@@ -188,3 +188,69 @@ export async function removeRoomMember(
     return { error: e instanceof Error ? e.message : '不明なエラーが発生しました' }
   }
 }
+
+export async function syncMembersFromRoom(
+  roomDbId: string,
+  chatworkRoomId: string,
+): Promise<{ error?: string; synced?: number }> {
+  try {
+    const { supabase } = await getAuthenticatedUser()
+    const db = supabase as any // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    const { data: settings } = await db.from('chatwork_settings')
+      .select('api_token')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const token: string | null = settings?.[0]?.api_token ?? null
+    if (!token) return { error: 'APIトークンが未設定です' }
+
+    const res = await fetch(`https://api.chatwork.com/v2/rooms/${chatworkRoomId}/members`, {
+      headers: { 'X-ChatWorkToken': token },
+    })
+    if (!res.ok) return { error: `Chatwork API エラー: ${res.status}` }
+
+    const apiMembers: { account_id: number; name: string; chatwork_id?: string }[] = await res.json()
+
+    let synced = 0
+    for (const m of apiMembers) {
+      const accountId = String(m.account_id)
+      const displayName = m.name || `user_${accountId}`
+
+      const { data: existing } = await db.from('chatwork_members')
+        .select('id')
+        .eq('account_id', accountId)
+        .single()
+
+      let memberDbId: string
+      if (existing?.id) {
+        await db.from('chatwork_members').update({
+          display_name: displayName,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }).eq('id', existing.id)
+        memberDbId = existing.id
+      } else {
+        const { data: inserted } = await db.from('chatwork_members').insert({
+          account_id: accountId,
+          display_name: displayName,
+          is_active: true,
+        }).select('id').single()
+        if (!inserted?.id) continue
+        memberDbId = inserted.id
+      }
+
+      await db.from('chatwork_room_members').upsert({
+        room_id: roomDbId,
+        member_id: memberDbId,
+        is_default_mention: false,
+      }, { onConflict: 'room_id,member_id' })
+
+      synced++
+    }
+
+    revalidatePath('/settings/chatwork')
+    return { synced }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : '不明なエラーが発生しました' }
+  }
+}

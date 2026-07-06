@@ -9,6 +9,7 @@ import {
   deleteMember,
   setRoomMember,
   removeRoomMember,
+  syncMembersFromRoom,
 } from './actions'
 
 type CwSetting = { id: string; api_token: string | null }
@@ -59,6 +60,9 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
   // Section 4: ルームとメンバーの紐付け
   const [roomMemberMsg, setRoomMemberMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [isPendingRoomMember, startRoomMemberTransition] = useTransition()
+
+  // Section 4 sync
+  const [syncingRoomId, setSyncingRoomId] = useState<string | null>(null)
 
   // Section 5: テスト送信
   const [testRoomId, setTestRoomId] = useState(rooms[0]?.room_id ?? '')
@@ -186,6 +190,19 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
     return roomMembers.some(
       rm => rm.room_id === roomDbId && rm.member_id === memberDbId && rm.is_default_mention,
     )
+  }
+
+  function handleSyncMembers(roomDbId: string, chatworkRoomId: string) {
+    setRoomMemberMsg(null)
+    setSyncingRoomId(roomDbId)
+    syncMembersFromRoom(roomDbId, chatworkRoomId).then(result => {
+      setSyncingRoomId(null)
+      if (result.error) {
+        setRoomMemberMsg({ ok: false, text: result.error })
+      } else {
+        setRoomMemberMsg({ ok: true, text: `${result.synced}人のメンバーを同期しました` })
+      }
+    })
   }
 
   function handleRoomMemberToggle(roomDbId: string, memberDbId: string, checked: boolean) {
@@ -503,7 +520,16 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
           <div className="space-y-4">
             {rooms.map(room => (
               <div key={room.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-gray-800 mb-3">{room.room_name}</p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium text-gray-800">{room.room_name}</p>
+                  <button
+                    onClick={() => handleSyncMembers(room.id, room.room_id)}
+                    disabled={syncingRoomId === room.id}
+                    className="px-2.5 py-1 text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-md hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {syncingRoomId === room.id ? '同期中...' : 'APIからメンバーを同期'}
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {members.map(member => {
                     const linked = isRoomMemberLinked(room.id, member.id)
