@@ -28,6 +28,9 @@ function deriveInitialLockStatus(
   return { state: 'locked_by_other', lockedByName: lockedByName ?? '他のユーザー' }
 }
 
+const TAB_ALL = 'すべて'
+const TAB_FREQUENT = 'よく使う'
+
 function TemplatePanel({
   templates,
   loading,
@@ -43,17 +46,23 @@ function TemplatePanel({
   onSelect: (t: TemplateItem) => void
   onClose: () => void
 }) {
-  const filtered = (templates ?? []).filter(t =>
-    !search || t.phrase.includes(search) || t.category.includes(search) || t.body.includes(search)
-  )
-  const frequent = (templates ?? []).filter(t => t.use_count > 0).slice(0, 3)
+  const all = templates ?? []
+  const hasFrequent = all.some(t => t.use_count > 0)
+  const categories = [...new Set(all.map(t => t.category || 'その他'))]
+  const tabs = [TAB_ALL, ...(hasFrequent ? [TAB_FREQUENT] : []), ...categories]
 
-  const grouped = filtered.reduce<Record<string, TemplateItem[]>>((acc, t) => {
-    const cat = t.category || 'その他'
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(t)
-    return acc
-  }, {})
+  const [activeTab, setActiveTab] = useState(TAB_ALL)
+
+  const textFiltered = search
+    ? all.filter(t => t.phrase.includes(search) || t.category.includes(search) || t.body.includes(search))
+    : all
+
+  const displayed = (() => {
+    if (search) return textFiltered
+    if (activeTab === TAB_ALL) return all
+    if (activeTab === TAB_FREQUENT) return [...all].sort((a, b) => b.use_count - a.use_count).filter(t => t.use_count > 0).slice(0, 5)
+    return all.filter(t => (t.category || 'その他') === activeTab)
+  })()
 
   return (
     <div className="mb-2 border border-green-200 rounded-lg bg-green-50 overflow-hidden">
@@ -61,6 +70,7 @@ function TemplatePanel({
         <span className="text-xs font-semibold text-green-800">テンプレート選択</span>
         <button onClick={onClose} className="text-green-600 hover:text-green-900 text-xs">✕</button>
       </div>
+
       <div className="px-3 py-2 border-b border-green-100">
         <input
           type="text"
@@ -71,28 +81,34 @@ function TemplatePanel({
           autoFocus
         />
       </div>
-      <div className="max-h-64 overflow-y-auto">
+
+      {!search && (
+        <div className="flex gap-0 border-b border-green-200 overflow-x-auto">
+          {tabs.map(tab => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`flex-shrink-0 text-xs px-3 py-1.5 transition-colors border-b-2 ${
+                activeTab === tab
+                  ? 'border-green-600 text-green-800 font-semibold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-green-700 hover:bg-green-50'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="max-h-56 overflow-y-auto">
         {loading && (
           <p className="text-xs text-gray-400 text-center py-4">読み込み中...</p>
         )}
-        {!loading && !search && frequent.length > 0 && (
-          <div>
-            <p className="text-xs text-gray-400 px-3 pt-2 pb-1 font-semibold">よく使う</p>
-            {frequent.map(t => (
-              <TemplateRow key={`freq-${t.id}`} t={t} onSelect={onSelect} />
-            ))}
-            <div className="border-t border-green-100 mt-1" />
-          </div>
-        )}
-        {!loading && Object.entries(grouped).map(([cat, items]) => (
-          <div key={cat}>
-            <p className="text-xs text-gray-400 px-3 pt-2 pb-1 font-semibold">{cat}</p>
-            {items.map(t => (
-              <TemplateRow key={t.id} t={t} onSelect={onSelect} />
-            ))}
-          </div>
+        {!loading && displayed.map(t => (
+          <TemplateRow key={t.id} t={t} onSelect={onSelect} />
         ))}
-        {!loading && filtered.length === 0 && (
+        {!loading && displayed.length === 0 && (
           <p className="text-xs text-gray-400 text-center py-4">テンプレートがありません</p>
         )}
       </div>
