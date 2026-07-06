@@ -56,6 +56,9 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
   const [editDisplayName, setEditDisplayName] = useState('')
   const [editMentionName, setEditMentionName] = useState('')
   const [isPendingEditMember, startEditMemberTransition] = useTransition()
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editNoteValue, setEditNoteValue] = useState('')
+  const [isPendingNote, startNoteTransition] = useTransition()
 
   // Section 4: ルームとメンバーの紐付け
   const [roomMemberMsg, setRoomMemberMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -161,6 +164,32 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
 
   function handleCancelEditMember() {
     setEditingMemberId(null)
+  }
+
+  function handleStartEditNote(member: CwMember) {
+    setEditingNoteId(member.id)
+    setEditNoteValue(member.mention_name ?? '')
+    setMemberMsg(null)
+  }
+
+  function handleSaveNote(id: string) {
+    setMemberMsg(null)
+    startNoteTransition(async () => {
+      const member = members.find(m => m.id === id)
+      if (!member) return
+      const result = await upsertMember({
+        id,
+        account_id: member.account_id,
+        display_name: member.display_name,
+        mention_name: editNoteValue.trim() || undefined,
+      })
+      if (result.error) {
+        setMemberMsg({ ok: false, text: result.error })
+      } else {
+        setMemberMsg({ ok: true, text: '備考を更新しました' })
+        setEditingNoteId(null)
+      }
+    })
   }
 
   function handleSaveEditMember(id: string) {
@@ -381,19 +410,20 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
         <h2 className="text-sm font-semibold text-gray-700 mb-3">メンバー管理</h2>
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {members.length > 0 ? (
-            <div className="overflow-y-auto max-h-80">
+            <div className="overflow-y-scroll" style={{ maxHeight: '420px' }}>
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                   <tr>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">アカウントID</th>
+                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 w-32">アカウントID</th>
                     <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">表示名</th>
                     <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">備考</th>
-                    <th className="px-4 py-2" />
+                    <th className="px-4 py-2 w-24" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {members.map(member => {
                     const isEditing = editingMemberId === member.id
+                    const isEditingNote = editingNoteId === member.id
                     return (
                       <tr key={member.id} className={isEditing ? 'bg-blue-50' : ''}>
                         {isEditing ? (
@@ -441,18 +471,63 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
                           <>
                             <td className="px-4 py-2 text-xs font-mono text-gray-600">{member.account_id}</td>
                             <td className="px-4 py-2 text-xs text-gray-800">{member.display_name}</td>
-                            <td className="px-4 py-2 text-xs text-gray-500">{member.mention_name ?? '—'}</td>
+                            <td className="px-2 py-1.5">
+                              {isEditingNote ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    value={editNoteValue}
+                                    onChange={e => setEditNoteValue(e.target.value)}
+                                    placeholder="備考を入力"
+                                    autoFocus
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') handleSaveNote(member.id)
+                                      if (e.key === 'Escape') setEditingNoteId(null)
+                                    }}
+                                    className="flex-1 border border-blue-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-0"
+                                  />
+                                  <button
+                                    onClick={() => handleSaveNote(member.id)}
+                                    disabled={isPendingNote}
+                                    className="text-xs text-white bg-blue-600 rounded px-2 py-0.5 hover:bg-blue-700 disabled:opacity-50 shrink-0"
+                                  >
+                                    {isPendingNote ? '...' : '保存'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingNoteId(null)}
+                                    className="text-xs text-gray-400 hover:text-gray-600 shrink-0"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 group">
+                                  <span className="text-xs text-gray-500 min-w-0 truncate">
+                                    {member.mention_name ?? <span className="text-gray-300">—</span>}
+                                  </span>
+                                  <button
+                                    onClick={() => handleStartEditNote(member)}
+                                    disabled={!!editingMemberId || !!editingNoteId}
+                                    title="備考を編集"
+                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500 disabled:opacity-0 transition-opacity shrink-0 ml-1"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+                                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              )}
+                            </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button
                                 onClick={() => handleStartEditMember(member)}
-                                disabled={isPendingDelMember || !!editingMemberId}
+                                disabled={isPendingDelMember || !!editingMemberId || !!editingNoteId}
                                 className="text-xs text-blue-500 hover:text-blue-700 disabled:opacity-50 mr-3"
                               >
                                 編集
                               </button>
                               <button
                                 onClick={() => handleDeleteMember(member.id)}
-                                disabled={isPendingDelMember || !!editingMemberId}
+                                disabled={isPendingDelMember || !!editingMemberId || !!editingNoteId}
                                 className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
                               >
                                 削除
