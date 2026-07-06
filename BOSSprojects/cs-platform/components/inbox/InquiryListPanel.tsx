@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import type { InquiryStatus, SourceChannel } from '@/lib/types'
-import { channelMeta } from '@/lib/channel-meta'
 import { RefreshButton } from './RefreshButton'
+import { InquiryList } from './InquiryList'
 
 interface Props {
   currentStatus: InquiryStatus
@@ -153,64 +153,15 @@ export async function InquiryListPanel({ currentStatus, tagId, q, mine, selected
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {(inquiries ?? []).length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-8">
-            該当する問い合わせはありません
-          </p>
-        ) : (
-          (inquiries ?? []).map((inq) => (
-            <Link
-              key={inq.id}
-              href={buildUrl(`/inbox/${inq.id}`, {
-                status: currentStatus,
-                channel: channel || undefined,
-                tag: tagId,
-                q,
-                mine: mine ? '1' : undefined,
-              })}
-              className={`block px-3 py-2.5 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                selectedId === inq.id
-                  ? 'bg-blue-50 border-l-2 border-l-blue-500 pl-2.5'
-                  : ''
-              }`}
-            >
-              <div className="flex items-center gap-1 mb-0.5 flex-wrap">
-                {inq.is_angry && (
-                  <span className="text-xs bg-red-500 text-white rounded px-1.5 py-0.5 font-semibold">🔥 要注意</span>
-                )}
-                {inq.needs_human && (
-                  <span className="text-xs bg-orange-500 text-white rounded px-1.5 py-0.5 font-semibold">⚠ 要対応</span>
-                )}
-                {inq.scheduled_reply_at && (
-                  <span className="text-xs bg-amber-100 text-amber-700 rounded px-1.5 py-0.5 font-medium">📅 送信予約</span>
-                )}
-                {inq.source_channel && (() => {
-                  const ch = channelMeta[inq.source_channel] ?? { label: inq.source_channel, className: 'bg-gray-100 text-gray-500' }
-                  return <span className={`text-xs rounded px-1.5 py-0.5 font-medium ${ch.className}`}>{ch.label}</span>
-                })()}
-              </div>
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {inq.customer_name ?? '（名前なし）'}
-              </p>
-              <p className="text-xs text-gray-500 truncate mt-0.5">
-                {inq.subject ?? '（件名なし）'}
-              </p>
-              {inq.order_number && (
-                <p className="text-xs text-gray-400 font-mono mt-0.5 truncate">
-                  {inq.order_number}
-                </p>
-              )}
-              <p className="text-xs text-gray-400 mt-1">
-                {new Date(inq.received_at).toLocaleString('ja-JP', {
-                  month: 'numeric',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </p>
-            </Link>
-          ))
-        )}
+        <InquiryList
+          inquiries={(inquiries ?? []) as any}
+          selectedId={selectedId}
+          currentStatus={currentStatus}
+          channel={channel}
+          tagId={tagId}
+          q={q}
+          mine={mine}
+        />
       </div>
     </div>
   )

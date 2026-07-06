@@ -111,7 +111,7 @@ export async function sendReply(
 
   const { data: inq } = await supabase
     .from('inquiries')
-    .select('source_channel, external_id, item_name, raw_payload, order_number, customer_name')
+    .select('source_channel, external_id, item_name, raw_payload, order_number, customer_name, subject, customer_profile_id')
     .eq('id', inquiryId)
     .single()
 
@@ -136,7 +136,7 @@ export async function sendReply(
           'Content-Type': 'application/json',
           ...(proxyKey ? { 'x-api-key': proxyKey } : {}),
         },
-        body: JSON.stringify({ inquiryNumber: inq.external_id, message: body, dryRun: true }),
+        body: JSON.stringify({ inquiryNumber: inq.external_id, message: body, dryRun: false }),
       })
     } catch (e) {
       return { error: `楽天返信プロキシへの接続に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}` }
@@ -167,7 +167,7 @@ export async function sendReply(
     await supabase.from('activity_logs').insert({
       inquiry_id: inquiryId,
       actor_id: user.id,
-      action: 'rakuten_reply_dry_run',
+      action: 'rakuten_reply_sent',
       before_val: null,
       after_val: (proxyData.payload ?? null) as unknown as import('@/lib/types').Json,
     })
@@ -179,7 +179,84 @@ export async function sendReply(
       before_val: null,
       after_val: null,
     })
+  } else if (inq.source_channel === 'email') {
+    // メール送信
+    let customerEmail: string | null = null
+    if (inq.customer_profile_id) {
+      const { data: profile } = await supabase
+        .from('customer_profiles')
+        .select('customer_email')
+        .eq('id', inq.customer_profile_id)
+        .single()
+      customerEmail = (profile as { customer_email: string | null } | null)?.customer_email ?? null
+    }
+
+    if (!customerEmail) {
+      return { error: '顧客のメールアドレスが取得できません' }
+    }
+
+    const gmailUser = process.env.GMAIL_USER
+    const gmailPass = process.env.GMAIL_APP_PASSWORD
+    if (!gmailUser || !gmailPass) {
+      return { error: 'GMAIL_USER / GMAIL_APP_PASSWORD が設定されていません' }
+    }
+
+    const nodemailer = await import('nodemailer')
+    const transporter = nodemailer.default.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser, pass: gmailPass },
+    })
+
+    const rawPayload = inq.raw_payload as Record<string, unknown> | null
+    const originalMessageId = typeof rawPayload?.gmail_message_id === 'string'
+      ? rawPayload.gmail_message_id
+      : null
+
+    const subjectLine = inq.subject
+      ? (inq.subject.startsWith('Re:') ? inq.subject : `Re: ${inq.subject}`)
+      : 'Re: お問い合わせについて'
+
+    const customerNameLine = inq.customer_name ? `${inq.customer_name} 様\n\n` : ''
+    const signature = 'Nextup株式会社\nカスタマー担当'
+    const mailText = `${customerNameLine}${body}\n\n${signature}`
+    const mailHtml = `${customerNameLine.replace(/\n/g, '<br>')}${body.replace(/\n/g, '<br>')}<br><br>${signature.replace(/\n/g, '<br>')}`
+
+    try {
+      await transporter.sendMail({
+        from: `"Nextオンライン" <${gmailUser}>`,
+        to: customerEmail,
+        subject: subjectLine,
+        text: mailText,
+        html: mailHtml,
+        ...(originalMessageId ? {
+          inReplyTo: originalMessageId,
+          references: originalMessageId,
+        } : {}),
+      })
+    } catch (e) {
+      return { error: `メール送信に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}` }
+    }
+
+    const { data: emailMsg } = await supabase.from('inquiry_messages').insert({
+      inquiry_id: inquiryId,
+      direction: 'outbound',
+      sender_type: 'staff',
+      sender_id: user.id,
+      body,
+      is_ai_draft: isAiDraft,
+      ai_modified: isAiDraft && aiModified,
+    }).select('id').single()
+    savedMessageId = emailMsg?.id ?? null
+
+    await supabase.from('activity_logs').insert({
+      inquiry_id: inquiryId,
+      actor_id: user.id,
+      action: 'email_sent',
+      before_val: null,
+      after_val: { to: customerEmail, subject: subjectLine } as unknown as import('@/lib/types').Json,
+    })
   } else {
+    // その他チャネル（内部記録のみ）
     const { data: otherMsg } = await supabase.from('inquiry_messages').insert({
       inquiry_id: inquiryId,
       direction: 'outbound',

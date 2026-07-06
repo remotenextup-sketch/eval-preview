@@ -393,7 +393,7 @@ export function ChatworkSettingsClient({ setting, rooms, members, roomMembers }:
             </div>
             {memberMsg && <InlineMessage ok={memberMsg.ok} message={memberMsg.text} />}
             <p className="text-xs text-gray-400">
-              アカウントIDはChatworkのプロフィールURLから確認できます
+              アカウントIDは<span className="font-semibold text-gray-600">数値のみ</span>（例: 4629051）。Chatwork API <code className="bg-gray-100 px-1 rounded">GET /v2/me</code> の <code className="bg-gray-100 px-1 rounded">account_id</code> フィールドで確認できます。アルファベット混じりのものは無効です。
             </p>
           </div>
         </div>
