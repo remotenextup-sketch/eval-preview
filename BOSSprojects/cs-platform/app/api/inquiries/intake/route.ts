@@ -392,21 +392,98 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 11. find-order fire-and-forget（新規かつ order_number がある場合）
+    // 11. find-order → orders テーブルへ保存（新規かつ order_number がある場合）
     if (isNew && order_number) {
       const proxyUrl = process.env.BOSS_API_PROXY_URL
       const apiKey = process.env.BOSS_PROXY_API_KEY
       if (proxyUrl) {
-        waitUntil(
-          fetch(`${proxyUrl}/api/boss/find-order`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(apiKey ? { 'x-api-key': apiKey.trim() } : {}),
-            },
-            body: JSON.stringify({ mallOrderNumber: order_number }),
-          }).catch((e) => console.error('[intake] find-order fire-and-forget failed', e))
-        )
+        waitUntil((async () => {
+          try {
+            const res = await fetch(`${proxyUrl}/api/boss/find-order`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(apiKey ? { 'x-api-key': apiKey.trim() } : {}),
+              },
+              body: JSON.stringify({ mallOrderNumber: order_number }),
+            })
+            const data = await res.json()
+            if (!data.ok || !data.order) return
+            const o = data.order as {
+              orderId: number | string
+              mallOrderNumber: string | null
+              orderStatus: string | null
+              shipmentStatus: string | null
+              carrier: string | null
+              trackingNumber: string | null
+              buyerName: string | null
+              buyerEmail: string | null
+              totalPrice: number | null
+              mallOrderDateTime: string | null
+              resultDeliveryDate: string | null
+              address: string | null
+              postalCode: string | null
+              items: Array<{ itemName: string; skuCode: string; unitPrice: number | null; quantity: number | null }>
+            }
+
+            // rakuten mall_id を取得
+            const { data: rakutenMall } = await supabase
+              .from('malls')
+              .select('id')
+              .eq('code', 'rakuten')
+              .maybeSingle()
+            if (!rakutenMall) return
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const db = supabase as any
+            const { data: upsertedOrder } = await db
+              .from('orders')
+              .upsert({
+                source_channel: 'rakuten',
+                external_order_id: String(o.orderId),
+                order_number: o.mallOrderNumber ?? order_number,
+                mall_id: rakutenMall.id,
+                customer_profile_id: customerProfileId,
+                ordered_at: o.mallOrderDateTime ?? new Date().toISOString(),
+                total_amount: o.totalPrice ?? null,
+                buyer_name: o.buyerName ?? null,
+                buyer_email: o.buyerEmail ?? null,
+                status: o.orderStatus ?? 'unknown',
+                shipment_status: o.shipmentStatus ?? null,
+                carrier: o.carrier ?? null,
+                tracking_number: o.trackingNumber ?? null,
+                delivery_date: o.resultDeliveryDate ?? null,
+                buyer_address: o.address ?? null,
+                buyer_postal_code: o.postalCode ?? null,
+                raw_payload: o,
+              }, { onConflict: 'source_channel,external_order_id' })
+              .select('id')
+              .single()
+
+            if (!upsertedOrder?.id) return
+
+            // items を保存（既存がなければ INSERT）
+            if (o.items && o.items.length > 0) {
+              const { count: existingCount } = await db
+                .from('order_items')
+                .select('*', { count: 'exact', head: true })
+                .eq('order_id', upsertedOrder.id)
+              if ((existingCount ?? 0) === 0) {
+                await db.from('order_items').insert(
+                  o.items.map((item: { itemName: string; skuCode: string; unitPrice: number | null; quantity: number | null }) => ({
+                    order_id: upsertedOrder.id,
+                    item_name: item.itemName ?? null,
+                    sku: item.skuCode ?? null,
+                    quantity: item.quantity ?? 1,
+                    unit_price: item.unitPrice ?? null,
+                  }))
+                )
+              }
+            }
+          } catch (e) {
+            console.error('[intake] find-order/sync failed', e)
+          }
+        })())
       }
     }
 
