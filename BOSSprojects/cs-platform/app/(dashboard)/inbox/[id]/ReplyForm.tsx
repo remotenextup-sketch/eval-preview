@@ -54,7 +54,7 @@ function TemplatePanel({
   const [activeTab, setActiveTab] = useState(TAB_ALL)
 
   const textFiltered = search
-    ? all.filter(t => t.phrase.includes(search) || t.category.includes(search) || t.body.includes(search))
+    ? all.filter(t => t.phrase.includes(search) || (t.category ?? '').includes(search) || t.body.includes(search))
     : all
 
   const displayed = (() => {
