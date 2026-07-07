@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { Eye } from 'lucide-react'
 import { sendReply, acquireLock, releaseLock, scheduleReply, fetchTemplates, recordTemplateUse } from './actions'
 import type { TemplateItem } from './actions'
 import { emitToast } from '@/components/ui/toast-emitter'
@@ -52,7 +53,7 @@ function TemplatePanel({
   const tabs = [TAB_ALL, ...(hasFrequent ? [TAB_FREQUENT] : []), ...categories]
 
   const [activeTab, setActiveTab] = useState(TAB_ALL)
-  const [hoveredId, setHoveredId] = useState<number | null>(null)
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
 
   const textFiltered = search
     ? all.filter(t => t.phrase.includes(search) || (t.category ?? '').includes(search) || t.body.includes(search))
@@ -65,10 +66,8 @@ function TemplatePanel({
     return all.filter(t => (t.category || 'その他') === activeTab)
   })()
 
-  const hoveredTemplate = hoveredId !== null ? all.find(t => t.id === hoveredId) ?? null : null
-
   return (
-    <div className="mb-2 border border-green-200 rounded-lg bg-green-50 overflow-hidden">
+    <div className="relative mb-2 border border-green-200 rounded-lg bg-green-50 overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-green-200 bg-green-100">
         <span className="text-xs font-semibold text-green-800">テンプレート選択</span>
         <button onClick={onClose} className="text-green-600 hover:text-green-900 text-xs">✕</button>
@@ -109,33 +108,56 @@ function TemplatePanel({
           <p className="text-xs text-gray-400 text-center py-4">読み込み中...</p>
         )}
         {!loading && displayed.map(t => (
-          <TemplateRow key={t.id} t={t} onSelect={onSelect} onHover={setHoveredId} />
+          <TemplateRow key={t.id} t={t} onSelect={onSelect} onPreview={setPreviewTemplate} />
         ))}
         {!loading && displayed.length === 0 && (
           <p className="text-xs text-gray-400 text-center py-4">テンプレートがありません</p>
         )}
       </div>
-      {hoveredTemplate && (
-        <div className="border-t border-green-200 px-3 py-2 bg-white max-h-28 overflow-y-auto">
-          <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">{hoveredTemplate.body}</p>
+
+      {previewTemplate && (
+        <div className="absolute inset-0 bg-white flex flex-col rounded-lg overflow-hidden border border-green-300 shadow-lg">
+          <div className="flex items-center justify-between px-3 py-2 bg-green-100 border-b border-green-200 flex-shrink-0">
+            <span className="text-xs font-semibold text-green-800 truncate pr-2">{previewTemplate.phrase}</span>
+            <button onClick={() => setPreviewTemplate(null)} className="flex-shrink-0 text-green-600 hover:text-green-900 text-xs">✕</button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-2">
+            <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{previewTemplate.body}</p>
+          </div>
+          <div className="px-3 py-2 border-t border-green-200 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => { onSelect(previewTemplate); setPreviewTemplate(null) }}
+              className="w-full text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md transition-colors"
+            >
+              このテンプレートを使う
+            </button>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function TemplateRow({ t, onSelect, onHover }: { t: TemplateItem; onSelect: (t: TemplateItem) => void; onHover: (id: number | null) => void }) {
+function TemplateRow({ t, onSelect, onPreview }: { t: TemplateItem; onSelect: (t: TemplateItem) => void; onPreview: (t: TemplateItem) => void }) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(t)}
-      onMouseEnter={() => onHover(t.id)}
-      onMouseLeave={() => onHover(null)}
-      className="w-full text-left px-3 py-2 hover:bg-green-100 transition-colors group"
-    >
-      <p className="text-xs font-medium text-gray-800 group-hover:text-green-800 truncate">{t.phrase}</p>
-      <p className="text-xs text-gray-400 truncate mt-0.5">{t.body.slice(0, 60)}...</p>
-    </button>
+    <div className="flex items-center hover:bg-green-100 transition-colors group">
+      <button
+        type="button"
+        onClick={() => onSelect(t)}
+        className="flex-1 min-w-0 text-left px-3 py-2"
+      >
+        <p className="text-xs font-medium text-gray-800 group-hover:text-green-800 truncate">{t.phrase}</p>
+        <p className="text-xs text-gray-400 truncate mt-0.5">{t.body.slice(0, 60)}...</p>
+      </button>
+      <button
+        type="button"
+        onClick={() => onPreview(t)}
+        className="flex-shrink-0 px-2 py-2 text-gray-300 hover:text-green-600 transition-colors"
+      >
+        <Eye size={13} />
+      </button>
+    </div>
   )
 }
 
