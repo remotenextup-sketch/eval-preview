@@ -136,7 +136,12 @@ export async function sendReply(
           'Content-Type': 'application/json',
           ...(proxyKey ? { 'x-api-key': proxyKey } : {}),
         },
-        body: JSON.stringify({ inquiryNumber: inq.external_id, message: body, dryRun: false }),
+        body: JSON.stringify({
+          inquiryNumber: inq.external_id,
+          message: body,
+          dryRun: false,
+          complete: statusAction !== 'pending_tomorrow' && statusAction !== 'pending_monday',
+        }),
       })
     } catch (e) {
       return { error: `楽天返信プロキシへの接続に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}` }
