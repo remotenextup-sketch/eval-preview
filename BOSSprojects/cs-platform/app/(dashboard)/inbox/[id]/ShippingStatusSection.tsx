@@ -61,10 +61,10 @@ export function ShippingStatusSection({ orderNumber, order }: Props) {
           <Row
             label="注文番号"
             value={
-              order.order_number && /^\d+-\d{8}-\d{9}$/.test(order.order_number)
+              order.order_number
                 ? (
                   <a
-                    href={`https://order.rms.rakuten.co.jp/rms/mall/order/detailConfirm?orderNumber=${order.order_number}`}
+                    href={`https://order-rp.rms.rakuten.co.jp/order-rb/individual-order-detail-sc/init?orderNumber=${order.order_number}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-mono text-blue-600 hover:underline"
