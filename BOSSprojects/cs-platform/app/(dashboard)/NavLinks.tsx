@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { label: '受信箱', href: '/inbox' },
   { label: '顧客', href: '/customers' },
   { label: '対応履歴', href: '/support-actions' },
+  { label: '分析', href: '/analytics' },
   { label: 'マスタ', href: '/master/products' },
   { label: '設定', href: '/settings/chatwork' },
 ]
