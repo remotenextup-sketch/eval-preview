@@ -590,7 +590,6 @@ export function ProductsClient({
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">SKU</th>
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">ブランド</th>
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">カテゴリ</th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">別名</th>
               <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">価格</th>
               <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">再送料</th>
               <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">保証</th>
@@ -601,7 +600,7 @@ export function ProductsClient({
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-sm text-gray-400 py-12">
+                <td colSpan={9} className="text-center text-sm text-gray-400 py-12">
                   {products.length === 0 ? '商品が登録されていません' : '条件に一致する商品がありません'}
                 </td>
               </tr>
@@ -610,13 +609,38 @@ export function ProductsClient({
                 const k = knowledgeByProduct.get(p.id)
                 return (
                   <tr key={p.id} className={p.is_active ? '' : 'opacity-50'}>
-                    <td className="px-4 py-3 font-medium text-gray-900 max-w-xs truncate">{p.product_name}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 max-w-xs">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate">{p.product_name}</span>
+                        {p.rakuten_url && (
+                          <a
+                            href={p.rakuten_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="楽天ページ"
+                            className="flex-shrink-0 text-xs text-gray-300 hover:text-red-500 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            楽↗
+                          </a>
+                        )}
+                        {p.dropbox_url && (
+                          <a
+                            href={p.dropbox_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Dropbox"
+                            className="flex-shrink-0 text-xs text-gray-300 hover:text-blue-500 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            DB↗
+                          </a>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{p.sku ?? '─'}</td>
                     <td className="px-4 py-3 text-gray-500">{p.brand ?? '─'}</td>
                     <td className="px-4 py-3 text-gray-500">{p.category ?? '─'}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs max-w-[140px] truncate">
-                      {k?.synonyms?.length ? k.synonyms.slice(0, 3).join('・') : '─'}
-                    </td>
                     <td className="px-4 py-3 text-gray-700 text-right">
                       {p.price != null ? `¥${p.price.toLocaleString()}` : '─'}
                     </td>
@@ -889,10 +913,21 @@ export function ProductsClient({
                     <p className="text-xs font-semibold text-gray-600 mb-3">プレゼント条件</p>
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">プレゼント品</label>
-                        <input type="text" value={cs.present_item} onChange={(e) => setC('present_item', e.target.value)}
-                          placeholder="例: オリジナルポーチ"
-                          className="w-full text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <label className="block text-xs font-medium text-gray-700 mb-1">プレゼント商品</label>
+                        <input
+                          type="text"
+                          value={cs.present_item}
+                          onChange={(e) => setC('present_item', e.target.value)}
+                          list="present-product-datalist"
+                          placeholder="商品名を入力または選択"
+                          className="w-full text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <datalist id="present-product-datalist">
+                          {products.map((p) => (
+                            <option key={p.id} value={p.product_name} />
+                          ))}
+                        </datalist>
+                        <p className="text-xs text-gray-400 mt-1">商品マスタから選択、または直接入力</p>
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">条件</label>
