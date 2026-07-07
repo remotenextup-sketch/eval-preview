@@ -17,7 +17,6 @@ export const AVAILABLE_FILES = [
   'src/components/ItemQuestions.jsx',
   'src/components/MemberView.jsx',
   'src/components/OverallView.jsx',
-  'src/components/PersonalView.jsx',
   'src/components/SalaryView.jsx',
   'src/components/SettingsModal.jsx',
   'src/components/SurveyModal.jsx',
@@ -37,9 +36,12 @@ export function base64Encode(str) {
 }
 
 export async function notifyChatwork(message) {
-  if (!CHATWORK_API_TOKEN || !CHATWORK_ROOM_ID) return;
+  if (!CHATWORK_API_TOKEN || !CHATWORK_ROOM_ID) {
+    console.warn('[shared] Chatwork env vars not set, skipping notification');
+    return;
+  }
   try {
-    await fetch(`https://api.chatwork.com/v2/rooms/${CHATWORK_ROOM_ID}/messages`, {
+    const res = await fetch(`https://api.chatwork.com/v2/rooms/${CHATWORK_ROOM_ID}/messages`, {
       method: 'POST',
       headers: {
         'X-ChatWorkToken': CHATWORK_API_TOKEN,
@@ -47,6 +49,12 @@ export async function notifyChatwork(message) {
       },
       body: `body=${encodeURIComponent(message)}`,
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error(`[shared] Chatwork API error ${res.status}: ${errText}`);
+    } else {
+      console.log('[shared] Chatwork notification sent');
+    }
   } catch (err) {
     console.error('[shared] Chatwork error:', err.message);
   }
@@ -141,6 +149,7 @@ ${fileList}
 - 認証・権限周りの変更
 - 複数機能にまたがる大きな変更
 - 要望内容が曖昧で判断できない
+- PersonalView（src/components/PersonalView.jsx）に関する変更（行数が多すぎるため自動修正対象外）
 
 ## 回答形式（JSONのみ・コードブロック不要）
 {

@@ -176,7 +176,11 @@ export default async function handler(request, context) {
       );
       console.log(`[bulk-consult] auto-fix targets: ${autoFixTargets.length}`);
       for (const bug of autoFixTargets) {
-        await runAutoFix(bug);
+        try {
+          await runAutoFix(bug);
+        } catch (err) {
+          console.error(`[bulk-consult] unhandled error in runAutoFix for "${bug.title}":`, err.message);
+        }
       }
     } catch (err) {
       console.error('[bulk-consult] background error:', err);
