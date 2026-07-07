@@ -52,6 +52,7 @@ function TemplatePanel({
   const tabs = [TAB_ALL, ...(hasFrequent ? [TAB_FREQUENT] : []), ...categories]
 
   const [activeTab, setActiveTab] = useState(TAB_ALL)
+  const [hoveredId, setHoveredId] = useState<number | null>(null)
 
   const textFiltered = search
     ? all.filter(t => t.phrase.includes(search) || (t.category ?? '').includes(search) || t.body.includes(search))
@@ -63,6 +64,8 @@ function TemplatePanel({
     if (activeTab === TAB_FREQUENT) return [...all].sort((a, b) => b.use_count - a.use_count).filter(t => t.use_count > 0).slice(0, 5)
     return all.filter(t => (t.category || 'その他') === activeTab)
   })()
+
+  const hoveredTemplate = hoveredId !== null ? all.find(t => t.id === hoveredId) ?? null : null
 
   return (
     <div className="mb-2 border border-green-200 rounded-lg bg-green-50 overflow-hidden">
@@ -106,21 +109,28 @@ function TemplatePanel({
           <p className="text-xs text-gray-400 text-center py-4">読み込み中...</p>
         )}
         {!loading && displayed.map(t => (
-          <TemplateRow key={t.id} t={t} onSelect={onSelect} />
+          <TemplateRow key={t.id} t={t} onSelect={onSelect} onHover={setHoveredId} />
         ))}
         {!loading && displayed.length === 0 && (
           <p className="text-xs text-gray-400 text-center py-4">テンプレートがありません</p>
         )}
       </div>
+      {hoveredTemplate && (
+        <div className="border-t border-green-200 px-3 py-2 bg-white max-h-28 overflow-y-auto">
+          <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">{hoveredTemplate.body}</p>
+        </div>
+      )}
     </div>
   )
 }
 
-function TemplateRow({ t, onSelect }: { t: TemplateItem; onSelect: (t: TemplateItem) => void }) {
+function TemplateRow({ t, onSelect, onHover }: { t: TemplateItem; onSelect: (t: TemplateItem) => void; onHover: (id: number | null) => void }) {
   return (
     <button
       type="button"
       onClick={() => onSelect(t)}
+      onMouseEnter={() => onHover(t.id)}
+      onMouseLeave={() => onHover(null)}
       className="w-full text-left px-3 py-2 hover:bg-green-100 transition-colors group"
     >
       <p className="text-xs font-medium text-gray-800 group-hover:text-green-800 truncate">{t.phrase}</p>
