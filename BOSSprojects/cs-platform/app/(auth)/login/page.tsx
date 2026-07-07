@@ -1,43 +1,45 @@
 'use client'
 
-import { useState } from 'react'
-import { login } from './actions'
-
-const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+import { useState, useTransition } from 'react'
+import { CS_MEMBERS } from '@/lib/cs-members'
+import { loginAs } from './actions'
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [isPending, startTransition] = useTransition()
+  const [loadingEmail, setLoadingEmail] = useState<string | null>(null)
 
-  async function handleSubmit(formData: FormData) {
-    setLoading(true)
+  function handleSelect(email: string) {
     setError(null)
-    const result = await login(formData)
-    if (result?.error) {
-      setError(result.error)
-      setLoading(false)
-    }
+    setLoadingEmail(email)
+    startTransition(async () => {
+      const result = await loginAs(email)
+      if (result?.error) {
+        setError(result.error)
+        setLoadingEmail(null)
+      }
+    })
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm bg-white rounded-lg border border-gray-200 shadow-sm p-8">
         <h1 className="text-xl font-semibold text-gray-900 mb-1">CS運営プラットフォーム</h1>
-        <p className="text-sm text-gray-500 mb-6">ログインしてください</p>
-        <form action={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
-            <input id="email" name="email" type="email" required autoComplete="email" className={inputClass} />
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
-            <input id="password" name="password" type="password" required autoComplete="current-password" className={inputClass} />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-medium rounded-md transition-colors">
-            {loading ? 'ログイン中...' : 'ログイン'}
-          </button>
-        </form>
+        <p className="text-sm text-gray-500 mb-6">担当者を選択してください</p>
+        <div className="grid grid-cols-2 gap-3">
+          {CS_MEMBERS.map(member => (
+            <button
+              key={member.email}
+              type="button"
+              disabled={isPending}
+              onClick={() => handleSelect(member.email)}
+              className="py-5 px-3 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-sm font-medium text-gray-800 hover:text-blue-700 disabled:opacity-50 transition-colors text-center"
+            >
+              {loadingEmail === member.email ? '...' : member.name}
+            </button>
+          ))}
+        </div>
+        {error && <p className="mt-4 text-sm text-red-600 text-center">{error}</p>}
       </div>
     </div>
   )
