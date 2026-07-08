@@ -12,14 +12,19 @@ import {
 type ItemForm = { title: string; content: string; url: string }
 const emptyForm: ItemForm = { title: '', content: '', url: '' }
 
+const inputCls =
+  'w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white resize-none'
+
 export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[] }) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<ChecklistItem[]>(initialItems)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<ItemForm>(emptyForm)
+  const [editError, setEditError] = useState<string | null>(null)
   const [addingSection, setAddingSection] = useState<'pre' | 'post' | null>(null)
   const [addForm, setAddForm] = useState<ItemForm>(emptyForm)
+  const [addError, setAddError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -38,21 +43,44 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
 
   function handleSaveEdit() {
     if (!editingId || !editForm.title.trim()) return
+    setEditError(null)
     startTransition(async () => {
-      await updateChecklistItem(editingId, editForm.title.trim(), editForm.content || null, editForm.url || null)
-      setEditingId(null)
-      await reload()
+      try {
+        const result = await updateChecklistItem(
+          editingId,
+          editForm.title.trim(),
+          editForm.content || null,
+          editForm.url || null,
+        )
+        if (result?.error) { setEditError(result.error); return }
+        setEditingId(null)
+        await reload()
+      } catch (e) {
+        setEditError(e instanceof Error ? e.message : '保存に失敗しました')
+      }
     })
   }
 
   function handleAdd() {
     if (!addingSection || !addForm.title.trim()) return
+    setAddError(null)
     const order = items.filter((i) => i.section === addingSection).length
     startTransition(async () => {
-      await addChecklistItem(addingSection, addForm.title.trim(), addForm.content || null, addForm.url || null, order)
-      setAddingSection(null)
-      setAddForm(emptyForm)
-      await reload()
+      try {
+        const result = await addChecklistItem(
+          addingSection,
+          addForm.title.trim(),
+          addForm.content || null,
+          addForm.url || null,
+          order,
+        )
+        if (result?.error) { setAddError(result.error); return }
+        setAddingSection(null)
+        setAddForm(emptyForm)
+        await reload()
+      } catch (e) {
+        setAddError(e instanceof Error ? e.message : '追加に失敗しました')
+      }
     })
   }
 
@@ -67,12 +95,14 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
   function startEdit(item: ChecklistItem) {
     setEditingId(item.id)
     setEditForm({ title: item.title, content: item.content ?? '', url: item.url ?? '' })
+    setEditError(null)
     setConfirmDeleteId(null)
   }
 
   function startAdd(section: 'pre' | 'post') {
     setAddingSection(section)
     setAddForm(emptyForm)
+    setAddError(null)
     setEditingId(null)
   }
 
@@ -84,6 +114,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
   function renderSection(section: 'pre' | 'post', label: string, sectionItems: ChecklistItem[]) {
     const done = sectionItems.filter((i) => checked.has(i.id)).length
     const total = sectionItems.length
+
     return (
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
@@ -96,6 +127,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
             </span>
           )}
         </div>
+
         <div className="divide-y divide-gray-50">
           {sectionItems.length === 0 && addingSection !== section && (
             <p className="text-xs text-gray-400 px-3 py-3 italic">項目がありません</p>
@@ -104,6 +136,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
           {sectionItems.map((item) => (
             <div key={item.id} className="px-3 py-2.5">
               {editingId === item.id ? (
+                /* ── 編集モード ── */
                 <div className="space-y-1.5">
                   <input
                     type="text"
@@ -111,22 +144,26 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                     onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
                     placeholder="項目名"
                     autoFocus
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit() } }}
+                    className={inputCls}
                   />
-                  <input
-                    type="text"
+                  <textarea
                     value={editForm.content}
                     onChange={(e) => setEditForm((p) => ({ ...p, content: e.target.value }))}
-                    placeholder="内容（任意）"
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="内容（任意）&#10;Enterで改行"
+                    rows={3}
+                    className={inputCls}
                   />
                   <input
                     type="url"
                     value={editForm.url}
                     onChange={(e) => setEditForm((p) => ({ ...p, url: e.target.value }))}
                     placeholder="URL（任意）"
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className={inputCls}
                   />
+                  {editError && (
+                    <p className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">{editError}</p>
+                  )}
                   <div className="flex gap-1.5 pt-0.5">
                     <button
                       onClick={handleSaveEdit}
@@ -136,7 +173,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                       {isPending ? '...' : '保存'}
                     </button>
                     <button
-                      onClick={() => setEditingId(null)}
+                      onClick={() => { setEditingId(null); setEditError(null) }}
                       className="text-xs px-2.5 py-1 border border-gray-200 text-gray-500 rounded hover:bg-gray-50 transition-colors"
                     >
                       ×
@@ -144,6 +181,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                   </div>
                 </div>
               ) : (
+                /* ── 表示モード ── */
                 <div className="flex items-start gap-2">
                   <input
                     type="checkbox"
@@ -158,25 +196,26 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                       {item.title}
                     </p>
                     {item.content && (
-                      <p className={`text-xs mt-0.5 ${
-                        checked.has(item.id) ? 'text-gray-300' : 'text-gray-400'
+                      <p className={`text-xs mt-0.5 whitespace-pre-wrap leading-relaxed ${
+                        checked.has(item.id) ? 'text-gray-300' : 'text-gray-500'
                       }`}>
                         {item.content}
                       </p>
                     )}
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     {item.url && (
                       <a
                         href={item.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-400 hover:text-blue-600 transition-colors"
-                        title="開く"
+                        className={`text-xs mt-1 block break-all hover:underline ${
+                          checked.has(item.id) ? 'text-gray-300' : 'text-blue-500'
+                        }`}
                       >
-                        ↗
+                        {item.url}
                       </a>
                     )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-1">
                     {confirmDeleteId === item.id ? (
                       <>
                         <button
@@ -215,6 +254,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
             </div>
           ))}
 
+          {/* ── 追加フォーム ── */}
           {addingSection === section && (
             <div className="px-3 py-2.5 bg-blue-50 space-y-1.5">
               <input
@@ -223,23 +263,26 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                 onChange={(e) => setAddForm((p) => ({ ...p, title: e.target.value }))}
                 placeholder="項目名 *"
                 autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
-                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
+                className={inputCls}
               />
-              <input
-                type="text"
+              <textarea
                 value={addForm.content}
                 onChange={(e) => setAddForm((p) => ({ ...p, content: e.target.value }))}
-                placeholder="内容（任意）"
-                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                placeholder="内容（任意）&#10;Enterで改行"
+                rows={3}
+                className={inputCls}
               />
               <input
                 type="url"
                 value={addForm.url}
                 onChange={(e) => setAddForm((p) => ({ ...p, url: e.target.value }))}
                 placeholder="URL（任意）"
-                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                className={inputCls}
               />
+              {addError && (
+                <p className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">{addError}</p>
+              )}
               <div className="flex gap-1.5 pt-0.5">
                 <button
                   onClick={handleAdd}
@@ -249,7 +292,7 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                   {isPending ? '...' : '追加'}
                 </button>
                 <button
-                  onClick={() => setAddingSection(null)}
+                  onClick={() => { setAddingSection(null); setAddError(null) }}
                   className="text-xs px-2.5 py-1 border border-gray-200 text-gray-500 rounded hover:bg-gray-50 transition-colors"
                 >
                   ×
@@ -273,7 +316,6 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
 
   return (
     <>
-      {/* Header button */}
       <button
         onClick={() => setOpen((v) => !v)}
         className={`relative text-sm px-2.5 py-1 rounded-md transition-colors ${
@@ -293,13 +335,10 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
 
       {open && (
         <>
-          {/* Backdrop (below header) */}
           <div
             className="fixed inset-x-0 top-12 bottom-0 z-40 bg-black/20"
             onClick={() => setOpen(false)}
           />
-
-          {/* Drawer panel */}
           <div className="fixed right-0 top-12 z-50 h-[calc(100vh-3rem)] w-72 bg-white shadow-xl border-l border-gray-200 flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-sm font-semibold text-gray-800">稼働チェックリスト</h2>
