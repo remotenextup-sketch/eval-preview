@@ -2,27 +2,16 @@ import { logout } from '@/app/(auth)/login/actions'
 import { NavLinks } from './NavLinks'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { HeaderPanel } from './HeaderPanel'
-import type { ChecklistItem } from './master/checklist/actions'
-import type { BoardItem, BoardCheck, BoardMember } from './board/actions'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
 
   let displayName = ''
   let openCount = 0
-  let checklistItems: ChecklistItem[] = []
-  let boardItems: BoardItem[] = []
-  let boardChecks: BoardCheck[] = []
-  let boardMembers: BoardMember[] = []
-  let currentUserId: string | null = null
 
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    currentUserId = user?.id ?? null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
-    const [countResult, profileResult, checklistResult, boardItemsResult, boardChecksResult, boardMembersResult] = await Promise.all([
+    const [countResult, profileResult] = await Promise.all([
       supabase
         .from('feedback_items')
         .select('*', { count: 'exact', head: true })
@@ -30,26 +19,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       user
         ? supabase.from('users').select('display_name').eq('id', user.id).single()
         : Promise.resolve({ data: null }),
-      db
-        .from('checklist_items')
-        .select('id, section, title, content, url, display_order')
-        .order('section', { ascending: true })
-        .order('display_order', { ascending: true })
-        .order('created_at', { ascending: true }),
-      db
-        .from('shared_board_items')
-        .select('id, date, title, content')
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false }),
-      db.from('shared_board_checks').select('item_id, user_id'),
-      db.from('users').select('id, display_name').eq('is_active', true).order('display_name', { ascending: true }),
     ])
     openCount = countResult.count ?? 0
     displayName = profileResult.data?.display_name ?? ''
-    checklistItems = checklistResult.data ?? []
-    boardItems = boardItemsResult.data ?? []
-    boardChecks = boardChecksResult.data ?? []
-    boardMembers = boardMembersResult.data ?? []
   } catch {}
 
   return (
@@ -58,13 +30,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="flex items-center gap-4">
           <span className="text-sm font-semibold text-gray-800">CS運営プラットフォーム</span>
           <NavLinks />
-          <HeaderPanel
-            initialChecklistItems={checklistItems}
-            initialBoardItems={boardItems}
-            initialBoardChecks={boardChecks}
-            boardMembers={boardMembers}
-            currentUserId={currentUserId}
-          />
         </div>
         <div className="flex items-center gap-3">
           <Link
