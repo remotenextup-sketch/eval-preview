@@ -7,7 +7,6 @@ const TABS = [
   { href: '/master/products', label: '商品マスタ' },
   { href: '/master/knowledge', label: 'ナレッジ事例' },
   { href: '/master/templates', label: '返信テンプレ' },
-  { href: '/master/checklist', label: 'チェックリスト' },
 ]
 
 export function MasterNav() {

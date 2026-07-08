@@ -3,6 +3,26 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export type ChecklistItem = {
+  id: string
+  section: 'pre' | 'post'
+  title: string
+  content: string | null
+  url: string | null
+  display_order: number
+}
+
+export async function fetchChecklistItems(): Promise<ChecklistItem[]> {
+  const supabase = (await createClient()) as any
+  const { data } = await supabase
+    .from('checklist_items')
+    .select('id, section, title, content, url, display_order')
+    .order('section', { ascending: true })
+    .order('display_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  return (data ?? []) as ChecklistItem[]
+}
+
 export async function addChecklistItem(
   section: 'pre' | 'post',
   title: string,

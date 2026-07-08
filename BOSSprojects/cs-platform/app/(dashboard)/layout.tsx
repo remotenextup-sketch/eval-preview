@@ -2,16 +2,19 @@ import { logout } from '@/app/(auth)/login/actions'
 import { NavLinks } from './NavLinks'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { ChecklistDrawer } from './ChecklistDrawer'
+import type { ChecklistItem } from './master/checklist/actions'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
 
   let displayName = ''
   let openCount = 0
+  let checklistItems: ChecklistItem[] = []
 
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    const [countResult, profileResult] = await Promise.all([
+    const [countResult, profileResult, checklistResult] = await Promise.all([
       supabase
         .from('feedback_items')
         .select('*', { count: 'exact', head: true })
@@ -19,9 +22,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
       user
         ? supabase.from('users').select('display_name').eq('id', user.id).single()
         : Promise.resolve({ data: null }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('checklist_items')
+        .select('id, section, title, content, url, display_order')
+        .order('section', { ascending: true })
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true }),
     ])
     openCount = countResult.count ?? 0
     displayName = profileResult.data?.display_name ?? ''
+    checklistItems = checklistResult.data ?? []
   } catch {}
 
   return (
@@ -30,6 +41,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="flex items-center gap-4">
           <span className="text-sm font-semibold text-gray-800">CS運営プラットフォーム</span>
           <NavLinks />
+          <ChecklistDrawer initialItems={checklistItems} />
         </div>
         <div className="flex items-center gap-3">
           <Link
