@@ -144,7 +144,13 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                     onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
                     placeholder="項目名"
                     autoFocus
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit() } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const next = e.currentTarget.closest('.space-y-1\\.5')?.querySelector('textarea')
+                        if (next) (next as HTMLTextAreaElement).focus()
+                      }
+                    }}
                     className={inputCls}
                   />
                   <textarea
@@ -263,7 +269,13 @@ export function ChecklistDrawer({ initialItems }: { initialItems: ChecklistItem[
                 onChange={(e) => setAddForm((p) => ({ ...p, title: e.target.value }))}
                 placeholder="項目名 *"
                 autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const next = e.currentTarget.closest('.space-y-1\\.5')?.querySelector('textarea')
+                    if (next) (next as HTMLTextAreaElement).focus()
+                  }
+                }}
                 className={inputCls}
               />
               <textarea
