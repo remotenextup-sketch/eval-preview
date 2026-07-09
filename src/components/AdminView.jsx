@@ -873,27 +873,8 @@ export default function AdminView({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* デスクトップレイアウト */}
-      <div className="hidden md:grid flex-1 overflow-hidden" style={{ gridTemplateColumns: '1fr 440px' }}>
-        <div className="bg-white border-r border-slate-200 overflow-hidden flex flex-col">
-          <AdminSpreadsheet {...spreadsheetProps} />
-        </div>
-        <div className="overflow-hidden flex flex-col bg-slate-50">
-          <AdminEditPane {...editPaneProps} onBack={null} />
-        </div>
-      </div>
-
-      {/* モバイルレイアウト */}
-      <div className="md:hidden flex-1 overflow-hidden relative">
-        <div className={`absolute inset-0 bg-white transition-transform duration-200 ${mobileShowAdminEdit ? '-translate-x-full' : 'translate-x-0'}`}>
-          <AdminLeftPane {...leftPaneProps} />
-        </div>
-        <div className={`absolute inset-0 bg-slate-50 transition-transform duration-200 ${mobileShowAdminEdit ? 'translate-x-0' : 'translate-x-full'}`}>
-          <AdminEditPane
-            {...editPaneProps}
-            onBack={() => { setMobileShowAdminEdit(false); onDeselect(); }}
-          />
-        </div>
+      <div className="flex-1 overflow-hidden flex flex-col bg-white">
+        <AdminSpreadsheet {...spreadsheetProps} />
       </div>
 
       {mtgMode && <MtgOverlay proposals={proposals} setMtgMode={setMtgMode} onAdoptProposal={onAdoptProposal} onUpdateProposalStatus={onUpdateProposalStatus} />}
