@@ -226,14 +226,14 @@ export default function EvaluationProgress() {
       supabase.from('evaluation_items').select('id, no, sort_order, item_name, description, rank, is_salary_item').eq('rank', selectedUser.rank),
       supabase.from('evaluation_plans').select('item_id').eq('user_id', selectedUser.id).eq('planned_month', CURRENT_MONTH),
     ]);
-    // Build rank-aware progress map:
-    // priority 2 = exact rank match, 1 = null rank, 0 = any other rank (last resort)
+    // Build rank-aware progress map: only use records that match current rank or have null rank
     const progressMap = {};
     (progress || []).forEach(p => {
       if (p.item_no == null) return;
       const priority = p.rank === selectedUser.rank ? 2 : p.rank == null ? 1 : 0;
+      if (priority === 0) return; // 別ランクのレコードは無視（ランク変更後の混入を防ぐ）
       const existing = progressMap[p.item_no];
-      const existingPriority = existing ? (existing.rank === selectedUser.rank ? 2 : existing.rank == null ? 1 : 0) : -1;
+      const existingPriority = existing ? (existing.rank === selectedUser.rank ? 2 : 1) : -1;
       if (priority > existingPriority) progressMap[p.item_no] = p;
     });
     const merged = (itemDefs || [])
@@ -435,7 +435,7 @@ export default function EvaluationProgress() {
             status: 'pending',
           }));
           const { error: progError } = await supabase.from('evaluation_progress')
-            .upsert(progressRows, { onConflict: 'user_name,item_no', ignoreDuplicates: true });
+            .upsert(progressRows, { onConflict: 'user_name,item_no,rank', ignoreDuplicates: true });
           if (progError) console.error('[saveAdminForm] evaluation_progress upsert error:', progError);
           else console.log('[saveAdminForm] evaluation_progress added for', targetUsers.length, 'users');
         }

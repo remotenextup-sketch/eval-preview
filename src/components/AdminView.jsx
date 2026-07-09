@@ -760,15 +760,23 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
 
       {/* テーブル */}
       <div className="flex-1 overflow-auto">
-        <table className="border-collapse text-xs" style={{ minWidth: 960, width: '100%' }}>
+        <table className="border-collapse text-xs w-full" style={{ tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '23%' }} />
+            <col style={{ width: '23%' }} />
+            <col style={{ width: '20%' }} />
+          </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100 border-b-2 border-slate-300">
-              <th className="sticky left-0 z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap" style={{ width: 96 }}>ランク</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ width: 160, minWidth: 160 }}>項目</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 180 }}>詳細</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 180 }}>問題点</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 180 }}>改善点</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600" style={{ minWidth: 100 }}>担当者</th>
+              <th className="sticky left-0 z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap">ランク</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">項目</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">詳細</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">問題点</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">改善点</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600">担当者</th>
             </tr>
           </thead>
           <tbody>
@@ -790,31 +798,31 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
                   <td className="sticky left-0 px-3 py-2.5 border-r border-slate-100 align-top" style={{ backgroundColor: rowBg }}>
                     {item.rank && <span className="inline-block text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600 whitespace-nowrap">{item.rank}</span>}
                   </td>
-                  <td className="px-3 py-2.5 border-r border-slate-100 align-top" style={{ width: 160, minWidth: 160 }}>
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top overflow-hidden">
                     <p className="text-slate-800 font-medium leading-snug line-clamp-4">{item.item_name}</p>
                     <div className="flex gap-1 mt-1 flex-wrap">
                       {item.is_salary_item && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">昇給</span>}
                       {item.status !== 'active' && <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">{item.status}</span>}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 border-r border-slate-100 align-top" style={{ minWidth: 180 }}>
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top overflow-hidden">
                     {item.description
                       ? <p className={`text-slate-600 leading-relaxed whitespace-pre-line ${isExpanded ? '' : 'line-clamp-3'}`}>{item.description}</p>
                       : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-2 py-2 border-r border-slate-100 align-top" style={{ minWidth: 180 }} onClick={e => e.stopPropagation()}>
+                  <td className="px-2 py-2 border-r border-slate-100 align-top overflow-hidden" onClick={e => e.stopPropagation()}>
                     <textarea value={cell.issue} rows={2} placeholder="問題点を入力..."
                       onChange={e => handleChange(item.id, 'issue', e.target.value)}
                       onBlur={() => handleBlur(item.id, 'issue')}
                       className={inputCls} />
                   </td>
-                  <td className="px-2 py-2 border-r border-slate-100 align-top" style={{ minWidth: 180 }} onClick={e => e.stopPropagation()}>
+                  <td className="px-2 py-2 border-r border-slate-100 align-top overflow-hidden" onClick={e => e.stopPropagation()}>
                     <textarea value={cell.content} rows={2} placeholder="改善点を入力..."
                       onChange={e => handleChange(item.id, 'content', e.target.value)}
                       onBlur={() => handleBlur(item.id, 'content')}
                       className={inputCls} />
                   </td>
-                  <td className="px-2 py-2 align-top" style={{ minWidth: 100 }} onClick={e => e.stopPropagation()}>
+                  <td className="px-2 py-2 align-top overflow-hidden" onClick={e => e.stopPropagation()}>
                     <input value={cell.user_name} placeholder="担当者"
                       onChange={e => handleChange(item.id, 'user_name', e.target.value)}
                       onBlur={() => handleBlur(item.id, 'user_name')}

@@ -265,13 +265,13 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     if (changes.rank && changes.rank !== editTarget.rank) {
       const progressName = editTarget.progress_name ?? editTarget.name;
       const [{ data: existing }, { data: newItems }] = await Promise.all([
-        supabase.from('evaluation_progress').select('item_no, status').eq('user_name', progressName),
+        supabase.from('evaluation_progress').select('item_no, rank, status').eq('user_name', progressName),
         supabase.from('evaluation_items').select('no').eq('rank', changes.rank).eq('status', 'active'),
       ]);
-      // statusがpendingでないレコードのitem_noは除外して重複挿入・上書きを防ぐ
-      const existingNos = new Set((existing || []).map(p => p.item_no));
+      // 新ランクのレコードのみ除外対象（別ランクのitem_noは重複扱いしない）
+      const existingNewRankNos = new Set((existing || []).filter(p => p.rank === changes.rank).map(p => p.item_no));
       const toInsert = (newItems || [])
-        .filter(item => item.no != null && !existingNos.has(item.no))
+        .filter(item => item.no != null && !existingNewRankNos.has(item.no))
         .map(item => ({
           user_name: progressName,
           item_no: item.no,
@@ -331,15 +331,14 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       else console.error('rank更新エラー:', updateErr);
     }
 
-    // 4. 新ランク items のうち未作成のもの（item_noが既存に全く存在しないもの）のみ新規作成
-    // completedを含む全既存item_noを除外対象とすることで、完了済み項目の再pendingを防ぐ
+    // 4. 新ランク items のうち未作成のもの（新ランクでのitem_noが存在しないもの）のみ新規作成
+    // ユニーク制約が(user_name, item_no, rank)になったため、別ランクの同item_noは除外対象外
     const alreadyCoveredByNewRank = new Set([
       ...(existing || []).filter(p => p.rank === newRank).map(p => p.item_no),
       ...toUpdate.map(p => p.item_no),
     ]);
-    const existingAnyRankNos = new Set((existing || []).map(p => p.item_no));
     const toInsert = (newItems || [])
-      .filter(i => !alreadyCoveredByNewRank.has(i.no) && !existingAnyRankNos.has(i.no))
+      .filter(i => !alreadyCoveredByNewRank.has(i.no))
       .map(i => ({
         user_name: progressName,
         item_no: i.no,
