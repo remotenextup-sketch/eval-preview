@@ -148,7 +148,8 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting]       = useState(false);
   const [toast, setToast]             = useState(null);
-  const [customDept, setCustomDept]   = useState('');
+  const [customDept, setCustomDept]       = useState('');
+  const [customEditDept, setCustomEditDept] = useState('');
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [realtimeStatus, setRealtimeStatus] = useState('connecting');
 
@@ -246,7 +247,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     setSavingEdit(true);
     const changes = {};
     if (editForm.rank) changes.rank = editForm.rank;
-    if (editForm.department !== undefined) changes.department = editForm.department.trim() ? [editForm.department.trim()] : (editTarget.department || []);
+    if (editForm.department !== undefined) changes.department = editForm.department;
     if (editForm.mall !== undefined) changes.mall = editForm.mall.trim() || null;
     if (editForm.birth_year !== undefined) changes.birth_year = editForm.birth_year ? parseInt(editForm.birth_year) : null;
     if (editForm.avatar_url !== undefined) changes.avatar_url = editForm.avatar_url || null;
@@ -283,6 +284,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     await fetchData();
     onUsersRefresh();
     setEditTarget(null);
+    setCustomEditDept('');
     setSavingEdit(false);
   };
 
@@ -486,7 +488,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                 {!u.resigned_at && (
                   <div className="flex gap-1.5 px-3 pb-3 pt-1 border-t border-slate-100">
                     <button
-                      onClick={() => { setEditTarget(u); setEditForm({ rank: u.rank || '', department: (u.department || []).join(', '), mall: u.mall || '', birth_year: u.birth_year ? String(u.birth_year) : '', avatar_url: u.avatar_url || '' }); }}
+                      onClick={() => { setEditTarget(u); setEditForm({ rank: u.rank || '', department: u.department || [], mall: u.mall || '', birth_year: u.birth_year ? String(u.birth_year) : '', avatar_url: u.avatar_url || '' }); }}
                       className="flex-1 text-xs py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors">
                       編集
                     </button>
@@ -554,7 +556,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                           setEditTarget(u);
                           setEditForm({
                             rank: u.rank || '',
-                            department: (u.department || []).join(', '),
+                            department: u.department || [],
                             mall: u.mall || '',
                             birth_year: u.birth_year ? String(u.birth_year) : '',
                             avatar_url: u.avatar_url || '',
@@ -681,7 +683,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="text-sm font-semibold text-slate-700">編集: {editTarget.name}</h3>
-              <button onClick={() => setEditTarget(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+              <button onClick={() => { setEditTarget(null); setCustomEditDept(''); }} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4">
               <div>
@@ -710,11 +712,29 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                 )}
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">部署</label>
-                <input type="text" value={editForm.department}
-                  onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))}
-                  placeholder="ECチーム"
-                  className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                <label className="text-xs font-medium text-slate-500 block mb-1.5">部署</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[...new Set([...DEFAULT_DEPARTMENTS, ...depts])].map(d => (
+                    <button key={d} type="button"
+                      onClick={() => setEditForm(p => ({
+                        ...p,
+                        department: p.department.includes(d)
+                          ? p.department.filter(x => x !== d)
+                          : [...p.department, d],
+                      }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${(editForm.department || []).includes(d) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input value={customEditDept} onChange={e => setCustomEditDept(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const v = customEditDept.trim(); if (v && !(editForm.department || []).includes(v)) setEditForm(p => ({ ...p, department: [...(p.department || []), v] })); setCustomEditDept(''); } }}
+                    placeholder="その他（自由入力）"
+                    className="flex-1 text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  <button type="button" onClick={() => { const v = customEditDept.trim(); if (v && !(editForm.department || []).includes(v)) setEditForm(p => ({ ...p, department: [...(p.department || []), v] })); setCustomEditDept(''); }}
+                    className="text-xs px-3 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">追加</button>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">担当モール</label>
@@ -736,7 +756,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
                 className="flex-1 text-sm py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 font-medium">
                 {savingEdit ? '保存中...' : '保存する'}
               </button>
-              <button onClick={() => setEditTarget(null)} className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">キャンセル</button>
+              <button onClick={() => { setEditTarget(null); setCustomEditDept(''); }} className="text-sm px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50">キャンセル</button>
             </div>
           </div>
         </div>
