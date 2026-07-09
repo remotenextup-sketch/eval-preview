@@ -762,12 +762,12 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
       <div className="flex-1 overflow-auto">
         <table className="border-collapse text-xs w-full" style={{ tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '14%' }} />
+            <col style={{ width: '7%' }} />
             <col style={{ width: '12%' }} />
-            <col style={{ width: '23%' }} />
-            <col style={{ width: '23%' }} />
-            <col style={{ width: '20%' }} />
+            <col style={{ width: '33%' }} />
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '18%' }} />
+            <col style={{ width: '8%' }} />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100 border-b-2 border-slate-300">
