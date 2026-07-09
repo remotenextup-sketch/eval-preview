@@ -13,6 +13,7 @@ import AdminView     from './components/AdminView';
 import SurveyView    from './components/SurveyView';
 import MembersView   from './components/MemberView';
 import SalaryView    from './components/SalaryView';
+import OrgChartView  from './components/OrgChartView';
 import SettingsModal  from './components/SettingsModal';
 import SurveyModal    from './components/SurveyModal';
 import BugBoardModal  from './components/BugBoardModal';
@@ -835,6 +836,12 @@ export default function EvaluationProgress() {
       {view === 'salary' && (
         <div className="flex-1 overflow-hidden flex flex-col">
           <SalaryView users={users} />
+        </div>
+      )}
+
+      {view === 'orgchart' && (
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <OrgChartView />
         </div>
       )}
 
