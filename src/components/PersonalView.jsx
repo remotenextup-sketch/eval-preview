@@ -165,14 +165,15 @@ function groupEvidences(evidences) {
       groups.push({ key: `solo-${ev.id}`, evidences: [ev] });
     }
   }
-  return groups;
+  // ベストエビデンスを先頭に（JS の sort は安定ソートなので相対順序は保たれる）
+  return groups.sort((a, b) => (b.evidences[0]?.is_best ? 1 : 0) - (a.evidences[0]?.is_best ? 1 : 0));
 }
 
 function ItemDetail({
   item, onBack, onStatusChange, onMemoChange,
   onPost, isUploading,
   onDeleteEvidence, onDeleteGroup, onUpdateEvidenceQuality, onUpdateEvidenceComment, onSaveBadQuality,
-  onAddImagesToGroup,
+  onAddImagesToGroup, onToggleBest,
   selectedUser,
 }) {
   const [localMemo, setLocalMemo] = useState(item.memo ?? '');
@@ -302,20 +303,42 @@ function ItemDetail({
         <PeerEvidenceSection itemNo={item.item_no} rank={item.rank} selfUserName={item.user_name} refreshKey={peerRefreshKey} />
         <section>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-            エビデンス{evidences.length > 0 && <span className="ml-1 normal-case font-normal text-slate-400">({evidences.length}件)</span>}
+            エビデンス{evidences.length > 0 && (
+              <span className="ml-1 normal-case font-normal text-slate-400">
+                ({evidences.length}件
+                {groupEvidences(evidences).filter(g => g.evidences[0]?.is_best).length > 0 &&
+                  <span className="text-amber-500 ml-1">⭐{groupEvidences(evidences).filter(g => g.evidences[0]?.is_best).length}</span>
+                })
+              </span>
+            )}
           </p>
           {evidences.length > 0 && (
             <div className="space-y-2 mb-3">
-              {groupEvidences(evidences).map(group => {
+              {groupEvidences(evidences).map((group, groupIdx, allGroups) => {
                 const rep = group.evidences[0];
                 const images = group.evidences.filter(e => e.evidence_type === 'image');
                 const textEv = group.evidences.find(e => e.evidence_type === 'text');
                 const sharedComment = rep.comment ?? null;
+                const isBest = !!rep.is_best;
                 const isBad = rep.quality === 'bad';
                 const cs = commentStates[rep.id];
                 const ns = ngStates[rep.id];
+                // ベスト→その他の境界にセクション見出しを入れる
+                const prevIsBest = groupIdx > 0 ? !!allGroups[groupIdx - 1].evidences[0]?.is_best : null;
+                const showBestHeader = isBest && groupIdx === 0;
+                const showOtherHeader = !isBest && prevIsBest;
                 return (
-                  <div key={group.key} className={`rounded-xl border p-3 ${isBad ? 'bg-red-50 border-red-100' : rep.quality === 'good' ? 'bg-green-50 border-green-100' : 'bg-white border-slate-200'}`}>
+                  <React.Fragment key={group.key}>
+                    {showBestHeader && (
+                      <p className="text-xs font-semibold text-amber-600 flex items-center gap-1 mb-1">⭐ ベストエビデンス</p>
+                    )}
+                    {showOtherHeader && (
+                      <p className="text-xs font-semibold text-slate-400 flex items-center gap-1 mt-3 mb-1">その他</p>
+                    )}
+                  <div className={`rounded-xl border p-3 ${isBest ? 'bg-amber-50 border-amber-300 shadow-sm' : isBad ? 'bg-red-50 border-red-100' : rep.quality === 'good' ? 'bg-green-50 border-green-100' : 'bg-white border-slate-200'}`}>
+                    {isBest && (
+                      <span className="inline-block mb-1.5 text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">⭐ ベストエビデンス</span>
+                    )}
                     <div className="flex items-start gap-2">
                       <div className="flex-1 min-w-0 space-y-2">
                         {/* テキストエビデンス */}
@@ -357,6 +380,10 @@ function ItemDetail({
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
+                        <button
+                          onClick={() => onToggleBest?.(rep.id, !isBest)}
+                          title={isBest ? 'ベストから外す' : 'ベストエビデンスに指定'}
+                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isBest ? 'bg-amber-400 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-amber-50 hover:text-amber-500'}`}>⭐</button>
                         <button
                           onClick={() => {
                             onUpdateEvidenceQuality(rep.id, 'good');
@@ -436,6 +463,7 @@ function ItemDetail({
                       </div>
                     )}
                   </div>
+                  </React.Fragment>
                 );
               })}
             </div>

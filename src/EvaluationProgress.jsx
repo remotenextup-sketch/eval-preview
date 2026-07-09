@@ -632,6 +632,20 @@ export default function EvaluationProgress() {
     }
   };
 
+  const updateEvidenceBest = async (progressId, evidenceId, isBest) => {
+    const { error } = await supabase.from('evaluation_evidences').update({ is_best: isBest }).eq('id', evidenceId);
+    if (!error) {
+      const upEv = item => ({
+        ...item,
+        evaluation_evidences: (item.evaluation_evidences ?? []).map(e =>
+          e.id === evidenceId ? { ...e, is_best: isBest } : e
+        ),
+      });
+      setItems(prev => prev.map(i => i.id === progressId ? upEv(i) : i));
+      setSelectedItem(prev => prev?.id === progressId ? upEv(prev) : prev);
+    }
+  };
+
   const saveBadQuality = async (progressId, evidenceId, ngReason) => {
     const reason = ngReason || null;
     const { error } = await supabase.from('evaluation_evidences').update({ quality: 'bad', ng_reason: reason }).eq('id', evidenceId);
@@ -738,6 +752,7 @@ export default function EvaluationProgress() {
     onUpdateEvidenceQuality: (evidenceId, quality) => updateEvidenceQuality(selectedItem.id, evidenceId, quality, selectedItem.item_no, selectedUser?.progress_name ?? selectedUser?.name),
     onUpdateEvidenceComment: (evidenceId, comment) => updateEvidenceComment(selectedItem.id, evidenceId, comment),
     onSaveBadQuality: (evidenceId, ngReason) => saveBadQuality(selectedItem.id, evidenceId, ngReason),
+    onToggleBest: (evidenceId, isBest) => updateEvidenceBest(selectedItem.id, evidenceId, isBest),
     selectedUser,
   } : null;
 
