@@ -797,7 +797,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
                   {/* 詳細 */}
                   <td className="px-3 py-2.5 border-r border-slate-100 align-top">
                     {item.description
-                      ? <p className="text-slate-600 leading-relaxed whitespace-pre-line">{item.description}</p>
+                      ? <p className={`text-slate-600 leading-relaxed whitespace-pre-line ${isSelected ? '' : 'line-clamp-3'}`}>{item.description}</p>
                       : <span className="text-slate-300">—</span>}
                   </td>
                   {/* 改善案 */}
