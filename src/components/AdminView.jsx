@@ -759,8 +759,8 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100 border-b-2 border-slate-300">
               <th className="sticky left-0 z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap" style={{ width: 96 }}>ランク</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 240 }}>項目</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 180, maxWidth: 220 }}>詳細</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ width: 160, minWidth: 160 }}>項目</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 360 }}>詳細</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 200 }}>改善案</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600" style={{ minWidth: 100 }}>記入者</th>
             </tr>
@@ -787,7 +787,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
                     )}
                   </td>
                   {/* 項目 */}
-                  <td className="px-3 py-2.5 border-r border-slate-100 align-top">
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top" style={{ width: 160, minWidth: 160 }}>
                     <p className="text-slate-800 font-medium leading-snug line-clamp-4">{item.item_name}</p>
                     <div className="flex gap-1 mt-1 flex-wrap">
                       {item.is_salary_item && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">昇給</span>}
@@ -795,9 +795,9 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
                     </div>
                   </td>
                   {/* 詳細 */}
-                  <td className="px-3 py-2.5 border-r border-slate-100 align-top" style={{ maxWidth: 220 }}>
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top">
                     {item.description
-                      ? <p className="text-slate-600 leading-relaxed whitespace-pre-line line-clamp-6">{item.description}</p>
+                      ? <p className="text-slate-600 leading-relaxed whitespace-pre-line">{item.description}</p>
                       : <span className="text-slate-300">—</span>}
                   </td>
                   {/* 改善案 */}
