@@ -675,6 +675,18 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
       });
   }, [adminItems, itemCommentCounts]);
 
+  // ランク別コメント件数（合計）
+  const rankCommentCounts = React.useMemo(() => {
+    const all = adminItems.reduce((sum, i) => sum + (itemCommentCounts[i.id] || 0), 0);
+    const byRank = availableRanks.reduce((acc, r) => {
+      acc[r] = adminItems
+        .filter(i => i.rank === r)
+        .reduce((sum, i) => sum + (itemCommentCounts[i.id] || 0), 0);
+      return acc;
+    }, {});
+    return { all, ...byRank };
+  }, [adminItems, itemCommentCounts, availableRanks]);
+
   const filtered = adminItems
     .filter(i => rankFilter === 'all' || i.rank === rankFilter)
     .filter(i => !commentOnly || (itemCommentCounts[i.id] || 0) > 0)
@@ -687,15 +699,37 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
       return (a.sort_order ?? a.no ?? 9999) - (b.sort_order ?? b.no ?? 9999);
     });
 
+  const rankLabel = (r) => {
+    const n = rankCommentCounts[r] || 0;
+    return n > 0 ? `${r}（${n}）` : r;
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* フィルターバー */}
+      {/* ランクタブ */}
+      <div className="px-3 pt-2 pb-0 bg-white border-b border-slate-200 shrink-0 overflow-x-auto">
+        <div className="flex gap-1 min-w-max pb-2">
+          <button
+            onClick={() => setRankFilter('all')}
+            className={`text-xs px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors ${rankFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            {rankCommentCounts.all > 0 ? `全て（${rankCommentCounts.all}）` : '全て'}
+          </button>
+          {availableRanks.map(r => (
+            <button key={r}
+              onClick={() => setRankFilter(r)}
+              className={`text-xs px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors ${
+                rankFilter === r ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {rankLabel(r)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 検索・フィルターバー */}
       <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0 flex items-center gap-2">
-        <select value={rankFilter} onChange={e => setRankFilter(e.target.value)}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none">
-          <option value="all">全ランク</option>
-          {availableRanks.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
         <div className="relative flex-1 max-w-xs">
           <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             placeholder="項目名で検索..."
@@ -806,8 +840,6 @@ export default function AdminView({
   availableRanks, addCustomRank,
   selectedUser, rankCommentSummary,
 }) {
-  const [adminViewMode, setAdminViewMode] = useState('list');
-
   const leftPaneProps = {
     availableRanks, adminItems, selectedAdminItem, onSelectAdminItem,
     rankCommentSummary, itemCommentCounts, proposals, setMtgMode,
@@ -827,26 +859,10 @@ export default function AdminView({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* モード切替バー (デスクトップのみ) */}
-      <div className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-white border-b border-slate-200 shrink-0">
-        <span className="text-xs text-slate-400 mr-1">表示:</span>
-        {[['list','リスト'],['sheet','スプレッドシート']].map(([m, l]) => (
-          <button key={m} onClick={() => setAdminViewMode(m)}
-            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${adminViewMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-            {l}
-          </button>
-        ))}
-      </div>
-
       {/* デスクトップレイアウト */}
-      <div
-        className="hidden md:grid flex-1 overflow-hidden"
-        style={{ gridTemplateColumns: adminViewMode === 'sheet' ? '1fr 440px' : '440px 1fr' }}
-      >
+      <div className="hidden md:grid flex-1 overflow-hidden" style={{ gridTemplateColumns: '1fr 440px' }}>
         <div className="bg-white border-r border-slate-200 overflow-hidden flex flex-col">
-          {adminViewMode === 'sheet'
-            ? <AdminSpreadsheet {...spreadsheetProps} />
-            : <AdminLeftPane {...leftPaneProps} />}
+          <AdminSpreadsheet {...spreadsheetProps} />
         </div>
         <div className="overflow-hidden flex flex-col bg-slate-50">
           <AdminEditPane {...editPaneProps} onBack={null} />
