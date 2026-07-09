@@ -762,16 +762,18 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
       <div className="flex-1 overflow-auto">
         <table className="border-collapse text-xs w-full" style={{ tableLayout: 'fixed' }}>
           <colgroup>
+            <col style={{ width: '3%' }} />
             <col style={{ width: '7%' }} />
             <col style={{ width: '12%' }} />
             <col style={{ width: '33%' }} />
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '18%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '17%' }} />
             <col style={{ width: '8%' }} />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100 border-b-2 border-slate-300">
-              <th className="sticky left-0 z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap">ランク</th>
+              <th className="sticky left-0 z-20 bg-slate-100 text-center px-1 py-2.5 font-semibold text-slate-400 border-r border-slate-200 whitespace-nowrap" style={{ width: '3%' }}>#</th>
+              <th className="sticky z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap" style={{ left: '3%' }}>ランク</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">項目</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">詳細</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200">問題点</th>
@@ -780,7 +782,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
             </tr>
           </thead>
           <tbody>
-            {filtered.map(item => {
+            {filtered.map((item, idx) => {
               const isSelected = selectedAdminItem?.id === item.id;
               const hasEntry   = (itemCommentCounts[item.id] || 0) > 0;
               const rowBg      = isSelected ? '#eef2ff' : hasEntry ? '#fff8f8' : '#ffffff';
@@ -795,7 +797,10 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
                   className="border-b border-slate-100 cursor-pointer transition-colors hover:brightness-95"
                   style={{ backgroundColor: rowBg }}
                 >
-                  <td className="sticky left-0 px-3 py-2.5 border-r border-slate-100 align-top" style={{ backgroundColor: rowBg }}>
+                  <td className="sticky left-0 text-center px-1 py-2.5 border-r border-slate-100 align-top text-slate-400 tabular-nums" style={{ backgroundColor: rowBg, width: '3%' }}>
+                    {idx + 1}
+                  </td>
+                  <td className="sticky px-3 py-2.5 border-r border-slate-100 align-top" style={{ backgroundColor: rowBg, left: '3%' }}>
                     {item.rank && <span className="inline-block text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600 whitespace-nowrap">{item.rank}</span>}
                   </td>
                   <td className="px-3 py-2.5 border-r border-slate-100 align-top overflow-hidden">
@@ -832,7 +837,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-12 text-slate-400">該当する項目がありません</td></tr>
+              <tr><td colSpan={7} className="text-center py-12 text-slate-400">該当する項目がありません</td></tr>
             )}
           </tbody>
         </table>
