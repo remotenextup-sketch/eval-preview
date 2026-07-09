@@ -29,6 +29,28 @@ function calcDays(fromStr, toStr) {
   return Math.max(0, Math.floor((new Date(toStr) - new Date(fromStr)) / 86400000));
 }
 
+const RANK_COLORS = {
+  'ディレクター':     'bg-purple-100 text-purple-700 border border-purple-200',
+  'スペシャリスト':   'bg-indigo-100 text-indigo-700 border border-indigo-200',
+  'リーダー':         'bg-blue-100 text-blue-700 border border-blue-200',
+  'パートナー':       'bg-green-100 text-green-700 border border-green-200',
+  'トレーニー':       'bg-yellow-100 text-yellow-700 border border-yellow-200',
+  'オンボーディング': 'bg-gray-100 text-gray-600 border border-gray-200',
+};
+
+function calcCurrentRankDuration(user) {
+  const col = {
+    'トレーニー': 'trainee_at', 'パートナー': 'partner_at',
+    'リーダー': 'leader_at', 'スペシャリスト': 'specialist_at', 'ディレクター': 'director_at',
+  }[user.rank];
+  if (!col || !user[col]) return null;
+  const months = Math.floor((Date.now() - new Date(user[col])) / (1000 * 60 * 60 * 24 * 30.44));
+  if (months < 1) return '1ヶ月未満';
+  if (months < 12) return `${months}ヶ月`;
+  const y = Math.floor(months / 12), m = months % 12;
+  return m > 0 ? `${y}年${m}ヶ月` : `${y}年`;
+}
+
 function AvatarCircle({ name, avatarUrl, size = 'md' }) {
   const sizeClass = { sm: 'w-9 h-9 text-sm', md: 'w-12 h-12 text-base', lg: 'w-20 h-20 text-2xl' }[size];
   if (avatarUrl) {
@@ -128,6 +150,7 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
   const [toast, setToast]             = useState(null);
   const [customDept, setCustomDept]   = useState('');
   const [expandedIds, setExpandedIds] = useState(new Set());
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting');
 
   useEffect(() => {
     if (!toast) return;
@@ -135,7 +158,19 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     return () => clearTimeout(t);
   }, [toast]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('members-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+        fetchData();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setRealtimeStatus('connected');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setRealtimeStatus('error');
+      });
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -382,10 +417,19 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
           </select>
         )}
         <span className="text-xs text-slate-400">{filtered.length}名</span>
+        {realtimeStatus === 'connected' && (
+          <span className="flex items-center gap-1 text-xs text-green-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
+            リアルタイム
+          </span>
+        )}
+        {realtimeStatus === 'error' && (
+          <span className="text-xs text-red-400">接続エラー</span>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
-            {[['list', 'リスト'], ['gallery', 'ギャラリー']].map(([v, l]) => (
+            {[['list', 'リスト'], ['gallery', 'カード']].map(([v, l]) => (
               <button key={v} onClick={() => setViewMode(v)}
                 className={`px-3 py-1.5 transition-colors ${viewMode === v ? 'bg-slate-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 {l}
@@ -406,20 +450,56 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       ) : filtered.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">該当するメンバーがいません</div>
       ) : viewMode === 'gallery' ? (
-        <div className="p-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {filtered.map(u => (
-            <div key={u.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col items-center gap-2 text-center ${u.resigned_at ? 'opacity-60' : ''}`}>
-              <AvatarCircle name={u.name} avatarUrl={u.avatar_url} size="lg" />
-              <div>
-                <p className="text-sm font-semibold text-slate-800 leading-tight">{u.name}</p>
-                {u.rank && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full mt-1 inline-block">{u.rank}</span>}
+        <div className="p-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {filtered.map(u => {
+            const duration = calcCurrentRankDuration(u);
+            const rankColor = RANK_COLORS[u.rank] ?? 'bg-slate-100 text-slate-600 border border-slate-200';
+            return (
+              <div key={u.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col ${u.resigned_at ? 'opacity-60' : ''}`}>
+                <div className="p-4 flex flex-col items-center gap-2 text-center flex-1">
+                  <AvatarCircle name={u.name} avatarUrl={u.avatar_url} size="lg" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-slate-800 leading-snug">{u.name}</p>
+                    {u.rank && (
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium inline-block ${rankColor}`}>
+                        {u.rank}
+                      </span>
+                    )}
+                  </div>
+                  {(u.department || []).length > 0 && (
+                    <div className="flex flex-wrap justify-center gap-1">
+                      {(u.department || []).map(d => (
+                        <span key={d} className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{d}</span>
+                      ))}
+                    </div>
+                  )}
+                  {u.mall && (
+                    <span className="text-xs bg-amber-50 text-amber-600 border border-amber-100 px-2 py-0.5 rounded-full">{u.mall}</span>
+                  )}
+                  {duration && (
+                    <span className="text-xs text-slate-400">現ランク {duration}</span>
+                  )}
+                  {u.resigned_at && (
+                    <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">退職済み</span>
+                  )}
+                </div>
+                {!u.resigned_at && (
+                  <div className="flex gap-1.5 px-3 pb-3 pt-1 border-t border-slate-100">
+                    <button
+                      onClick={() => { setEditTarget(u); setEditForm({ rank: u.rank || '', department: (u.department || []).join(', '), mall: u.mall || '', birth_year: u.birth_year ? String(u.birth_year) : '', avatar_url: u.avatar_url || '' }); }}
+                      className="flex-1 text-xs py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors">
+                      編集
+                    </button>
+                    <button
+                      onClick={() => { setRankChangeTarget(u); setRankChangeNewRank(''); setRankChangeResult(null); }}
+                      className="flex-1 text-xs py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-colors">
+                      ランク変更
+                    </button>
+                  </div>
+                )}
               </div>
-              {(u.department || []).slice(0, 2).map(d => (
-                <span key={d} className="text-xs text-slate-400 leading-tight">{d}</span>
-              ))}
-              {u.resigned_at && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">退職済み</span>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
