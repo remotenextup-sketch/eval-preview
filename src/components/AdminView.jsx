@@ -652,8 +652,9 @@ function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalSt
 function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, onSelectAdminItem, availableRanks }) {
   const [allComments, setAllComments] = useState({});
   const [loading, setLoading]         = useState(false);
-  const [rankFilter, setRankFilter]   = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [rankFilter, setRankFilter]         = useState('all');
+  const [searchQuery, setSearchQuery]       = useState('');
+  const [commentOnly, setCommentOnly]       = useState(false);
 
   useEffect(() => {
     const ids = adminItems.filter(i => (itemCommentCounts[i.id] || 0) > 0).map(i => i.id);
@@ -676,6 +677,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
 
   const filtered = adminItems
     .filter(i => rankFilter === 'all' || i.rank === rankFilter)
+    .filter(i => !commentOnly || (itemCommentCounts[i.id] || 0) > 0)
     .filter(i => !searchQuery.trim() || (i.item_name ?? '').includes(searchQuery.trim()))
     .sort((a, b) => {
       const ai = availableRanks.indexOf(a.rank);
@@ -703,6 +705,16 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
               className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm leading-none">✕</button>
           )}
         </div>
+        <button
+          onClick={() => setCommentOnly(prev => !prev)}
+          className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors whitespace-nowrap ${
+            commentOnly
+              ? 'bg-pink-500 text-white border-pink-500'
+              : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          コメントあり
+        </button>
         <span className="text-xs text-slate-400">{filtered.length}件</span>
         {loading && <span className="text-xs text-slate-300">読込中...</span>}
       </div>
@@ -713,8 +725,8 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100 border-b-2 border-slate-300">
               <th className="sticky left-0 z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap" style={{ width: 96 }}>ランク</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 260 }}>項目</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 300 }}>詳細</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 240 }}>項目</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 180, maxWidth: 220 }}>詳細</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 200 }}>改善案</th>
               <th className="text-left px-3 py-2.5 font-semibold text-slate-600" style={{ minWidth: 100 }}>記入者</th>
             </tr>
@@ -749,7 +761,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, on
                     </div>
                   </td>
                   {/* 詳細 */}
-                  <td className="px-3 py-2.5 border-r border-slate-100 align-top">
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top" style={{ maxWidth: 220 }}>
                     {item.description
                       ? <p className="text-slate-600 leading-relaxed whitespace-pre-line line-clamp-6">{item.description}</p>
                       : <span className="text-slate-300">—</span>}
