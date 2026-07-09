@@ -648,6 +648,139 @@ function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalSt
   );
 }
 
+// ── AdminSpreadsheet ─────────────────────────────────────────────
+function AdminSpreadsheet({ adminItems, itemCommentCounts, selectedAdminItem, onSelectAdminItem, availableRanks }) {
+  const [allComments, setAllComments] = useState({});
+  const [loading, setLoading]         = useState(false);
+  const [rankFilter, setRankFilter]   = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    const ids = adminItems.filter(i => (itemCommentCounts[i.id] || 0) > 0).map(i => i.id);
+    if (ids.length === 0) { setAllComments({}); return; }
+    setLoading(true);
+    supabase.from('item_comments')
+      .select('item_id, user_name, content, created_at')
+      .in('item_id', ids)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        const grouped = {};
+        (data || []).forEach(c => {
+          if (!grouped[c.item_id]) grouped[c.item_id] = [];
+          grouped[c.item_id].push(c);
+        });
+        setAllComments(grouped);
+        setLoading(false);
+      });
+  }, [adminItems, itemCommentCounts]);
+
+  const filtered = adminItems
+    .filter(i => rankFilter === 'all' || i.rank === rankFilter)
+    .filter(i => !searchQuery.trim() || (i.item_name ?? '').includes(searchQuery.trim()))
+    .sort((a, b) => {
+      const ai = availableRanks.indexOf(a.rank);
+      const bi = availableRanks.indexOf(b.rank);
+      const ri = (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      if (ri !== 0) return ri;
+      return (a.sort_order ?? a.no ?? 9999) - (b.sort_order ?? b.no ?? 9999);
+    });
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* フィルターバー */}
+      <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0 flex items-center gap-2">
+        <select value={rankFilter} onChange={e => setRankFilter(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none">
+          <option value="all">全ランク</option>
+          {availableRanks.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <div className="relative flex-1 max-w-xs">
+          <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            placeholder="項目名で検索..."
+            className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 pr-7 bg-white focus:outline-none" />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm leading-none">✕</button>
+          )}
+        </div>
+        <span className="text-xs text-slate-400">{filtered.length}件</span>
+        {loading && <span className="text-xs text-slate-300">読込中...</span>}
+      </div>
+
+      {/* テーブル */}
+      <div className="flex-1 overflow-auto">
+        <table className="border-collapse text-xs" style={{ minWidth: 900, width: '100%' }}>
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-slate-100 border-b-2 border-slate-300">
+              <th className="sticky left-0 z-20 bg-slate-100 text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200 whitespace-nowrap" style={{ width: 96 }}>ランク</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 260 }}>項目</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 300 }}>詳細</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600 border-r border-slate-200" style={{ minWidth: 200 }}>改善案</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-600" style={{ minWidth: 100 }}>記入者</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(item => {
+              const comments    = allComments[item.id] || [];
+              const isSelected  = selectedAdminItem?.id === item.id;
+              const hasComments = comments.length > 0;
+              const rowBg       = isSelected ? '#eef2ff' : hasComments ? '#fff8f8' : '#ffffff';
+              return (
+                <tr
+                  key={item.id}
+                  onClick={() => onSelectAdminItem(item)}
+                  className="border-b border-slate-100 cursor-pointer transition-colors hover:brightness-95"
+                  style={{ backgroundColor: rowBg }}
+                >
+                  {/* ランク（sticky） */}
+                  <td className="sticky left-0 px-3 py-2.5 border-r border-slate-100 align-top" style={{ backgroundColor: rowBg }}>
+                    {item.rank && (
+                      <span className="inline-block text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
+                        {item.rank}
+                      </span>
+                    )}
+                  </td>
+                  {/* 項目 */}
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top">
+                    <p className="text-slate-800 font-medium leading-snug line-clamp-4">{item.item_name}</p>
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {item.is_salary_item && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">昇給</span>}
+                      {item.status !== 'active' && <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">{item.status}</span>}
+                    </div>
+                  </td>
+                  {/* 詳細 */}
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top">
+                    {item.description
+                      ? <p className="text-slate-600 leading-relaxed whitespace-pre-line line-clamp-6">{item.description}</p>
+                      : <span className="text-slate-300">—</span>}
+                  </td>
+                  {/* 改善案 */}
+                  <td className="px-3 py-2.5 border-r border-slate-100 align-top">
+                    {hasComments
+                      ? <div className="space-y-2">{comments.map((c, i) => <p key={i} className="text-slate-700 leading-snug">{c.content}</p>)}</div>
+                      : <span className="text-slate-300">—</span>}
+                  </td>
+                  {/* 記入者 */}
+                  <td className="px-3 py-2.5 align-top">
+                    {hasComments
+                      ? <div className="space-y-2">{comments.map((c, i) => <p key={i} className="text-slate-500 whitespace-nowrap">{c.user_name || '匿名'}</p>)}</div>
+                      : <span className="text-slate-300">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={5} className="text-center py-12 text-slate-400">該当する項目がありません</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── AdminView (exported) ─────────────────────────────────────────
 export default function AdminView({
   adminItems, selectedAdminItem, onSelectAdminItem,
@@ -661,6 +794,8 @@ export default function AdminView({
   availableRanks, addCustomRank,
   selectedUser, rankCommentSummary,
 }) {
+  const [adminViewMode, setAdminViewMode] = useState('list');
+
   const leftPaneProps = {
     availableRanks, adminItems, selectedAdminItem, onSelectAdminItem,
     rankCommentSummary, itemCommentCounts, proposals, setMtgMode,
@@ -674,16 +809,39 @@ export default function AdminView({
     onSave, onArchive, onDelete, onDeselect, onSelectNew, setItemCommentCounts, availableRanks,
   };
 
+  const spreadsheetProps = {
+    adminItems, itemCommentCounts, selectedAdminItem, onSelectAdminItem, availableRanks,
+  };
+
   return (
-    <>
-      <div className="hidden md:grid flex-1 overflow-hidden" style={{ gridTemplateColumns: '440px 1fr' }}>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* モード切替バー (デスクトップのみ) */}
+      <div className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-white border-b border-slate-200 shrink-0">
+        <span className="text-xs text-slate-400 mr-1">表示:</span>
+        {[['list','リスト'],['sheet','スプレッドシート']].map(([m, l]) => (
+          <button key={m} onClick={() => setAdminViewMode(m)}
+            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${adminViewMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* デスクトップレイアウト */}
+      <div
+        className="hidden md:grid flex-1 overflow-hidden"
+        style={{ gridTemplateColumns: adminViewMode === 'sheet' ? '1fr 440px' : '440px 1fr' }}
+      >
         <div className="bg-white border-r border-slate-200 overflow-hidden flex flex-col">
-          <AdminLeftPane {...leftPaneProps} />
+          {adminViewMode === 'sheet'
+            ? <AdminSpreadsheet {...spreadsheetProps} />
+            : <AdminLeftPane {...leftPaneProps} />}
         </div>
         <div className="overflow-hidden flex flex-col bg-slate-50">
           <AdminEditPane {...editPaneProps} onBack={null} />
         </div>
       </div>
+
+      {/* モバイルレイアウト */}
       <div className="md:hidden flex-1 overflow-hidden relative">
         <div className={`absolute inset-0 bg-white transition-transform duration-200 ${mobileShowAdminEdit ? '-translate-x-full' : 'translate-x-0'}`}>
           <AdminLeftPane {...leftPaneProps} />
@@ -695,7 +853,8 @@ export default function AdminView({
           />
         </div>
       </div>
+
       {mtgMode && <MtgOverlay proposals={proposals} setMtgMode={setMtgMode} onAdoptProposal={onAdoptProposal} onUpdateProposalStatus={onUpdateProposalStatus} />}
-    </>
+    </div>
   );
 }
