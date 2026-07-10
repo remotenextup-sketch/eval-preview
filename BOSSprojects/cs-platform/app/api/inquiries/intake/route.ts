@@ -171,11 +171,18 @@ export async function POST(req: NextRequest) {
       inquiryId = existing.id
       isNew = false
 
-      // resolved / spam は上書きしない。それ以外は外部ステータスで更新する。
-      const PROTECTED_STATUSES = new Set(['resolved', 'spam'])
+      // spam は上書きしない。resolved は原則保護するが、
+      // 「お客様が再返信（isCompleted=false かつ last_reply_from=user）」の場合は open に戻す。
+      const isCustomerReReply =
+        existing.status === 'resolved' &&
+        !resolvedIsCompleted &&
+        resolvedLastReplyFrom != null &&
+        !MERCHANT_SENDER_TYPES.has(resolvedLastReplyFrom.toLowerCase())
+
+      const PROTECTED_STATUSES = new Set(['spam', ...(isCustomerReReply ? [] : ['resolved'])])
       const shouldUpdateStatus = !PROTECTED_STATUSES.has(existing.status ?? '')
       const newStatus = shouldUpdateStatus
-        ? resolveInitialStatus(resolvedLastReplyFrom, resolvedIsCompleted)
+        ? (isCustomerReReply ? 'open' : resolveInitialStatus(resolvedLastReplyFrom, resolvedIsCompleted))
         : undefined
 
       // raw_payload は常に最新化、status は条件付きで更新
