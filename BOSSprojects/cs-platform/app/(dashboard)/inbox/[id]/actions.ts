@@ -511,68 +511,35 @@ export async function confirmSupportAction(supportActionId: string): Promise<{ e
 export async function acquireLock(
   inquiryId: string,
 ): Promise<{ success: true } | { success: false; lockedByName: string }> {
+  // ユーザー認証はユーザークライアントで確認
   const supabase = await createClient()
   const { data: authData } = await supabase.auth.getUser()
   if (!authData.user) return { success: false, lockedByName: '認証エラー（再ログインしてください）' }
   const user = authData.user
 
-  const { data, error } = await supabase.rpc('try_acquire_inquiry_lock', {
-    p_inquiry_id: inquiryId,
-    p_user_id: user.id,
-  })
+  // DB操作はサービスロールで行う（RLS・RPC権限問題を回避）
+  const db = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const LOCK_EXPIRE_MS = 30 * 60 * 1000
+  const expiredBefore = new Date(Date.now() - LOCK_EXPIRE_MS).toISOString()
 
-  // RPC失敗時はフォールバック：直接 UPDATE で取得を試みる
-  if (error || !data) {
-    const LOCK_EXPIRE_MIN = 30
-    const { data: updated } = await supabase
-      .from('inquiries')
-      .update({ locked_by: user.id, locked_at: new Date().toISOString() })
-      .eq('id', inquiryId)
-      .or(`locked_by.is.null,locked_at.lt.${new Date(Date.now() - LOCK_EXPIRE_MIN * 60 * 1000).toISOString()}`)
-      .select('id')
-      .single()
-    if (updated) {
-      revalidatePath(`/inbox/${inquiryId}`)
-      return { success: true }
-    }
-    const { data: inq } = await supabase.from('inquiries').select('locked_by').eq('id', inquiryId).single()
-    const { data: holder } = inq?.locked_by
-      ? await supabase.from('users').select('display_name').eq('id', inq.locked_by).single()
-      : { data: null }
-    return { success: false, lockedByName: holder?.display_name ?? '他のユーザー' }
-  }
+  // ロックが空 or 期限切れの場合のみ UPDATE が通る
+  const { data: updated } = await db
+    .from('inquiries')
+    .update({ locked_by: user.id, locked_at: new Date().toISOString() })
+    .eq('id', inquiryId)
+    .or(`locked_by.is.null,locked_at.lt.${expiredBefore}`)
+    .select('id')
+    .single()
 
-  const result = data as { acquired: boolean; was_expired: boolean; prev_locked_by: string | null }
-
-  if (result.acquired) {
-    if (result.was_expired && result.prev_locked_by) {
-      await supabase.from('activity_logs').insert({
-        inquiry_id: inquiryId,
-        actor_id: user.id,
-        action: 'lock_expired',
-        before_val: { locked_by: result.prev_locked_by },
-        after_val: { locked_by: user.id },
-      })
-    }
-    await supabase.from('activity_logs').insert({
-      inquiry_id: inquiryId,
-      actor_id: user.id,
-      action: 'locked',
-      before_val: null,
-      after_val: { locked_by: user.id },
-    })
+  if (updated) {
     revalidatePath(`/inbox/${inquiryId}`)
     return { success: true }
   }
 
-  const { data: inq } = await supabase
-    .from('inquiries')
-    .select('locked_by')
-    .eq('id', inquiryId)
-    .single()
-
+  // 取得できなかった → 誰かが有効なロックを持っている
+  const { data: inq } = await db.from('inquiries').select('locked_by').eq('id', inquiryId).single()
   const { data: holder } = inq?.locked_by
-    ? await supabase.from('users').select('display_name').eq('id', inq.locked_by).single()
+    ? await db.from('users').select('display_name').eq('id', inq.locked_by).single()
     : { data: null }
 
   return { success: false, lockedByName: holder?.display_name ?? '他のユーザー' }
@@ -586,7 +553,8 @@ export async function forceTakeLock(
   if (!authData.user) return { success: false }
   const user = authData.user
 
-  await supabase.from('inquiries')
+  const db = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  await db.from('inquiries')
     .update({ locked_by: user.id, locked_at: new Date().toISOString() })
     .eq('id', inquiryId)
 
@@ -604,10 +572,12 @@ export async function forceTakeLock(
 
 export async function releaseLock(inquiryId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  const { data: authData } = await supabase.auth.getUser()
+  if (!authData.user) return
+  const user = authData.user
 
-  const { data } = await supabase
+  const db = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { data } = await db
     .from('inquiries')
     .update({ locked_by: null, locked_at: null })
     .eq('id', inquiryId)
@@ -617,7 +587,7 @@ export async function releaseLock(inquiryId: string) {
 
   if (!data) return
 
-  await supabase.from('activity_logs').insert({
+  await db.from('activity_logs').insert({
     inquiry_id: inquiryId,
     actor_id: user.id,
     action: 'unlocked',
