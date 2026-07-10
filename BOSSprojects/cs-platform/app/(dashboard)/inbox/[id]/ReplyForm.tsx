@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye } from 'lucide-react'
-import { sendReply, acquireLock, releaseLock, scheduleReply, fetchTemplates, recordTemplateUse } from './actions'
+import { sendReply, acquireLock, releaseLock, scheduleReply, fetchTemplates, recordTemplateUse, forceTakeLock } from './actions'
 import type { TemplateItem } from './actions'
 import { emitToast } from '@/components/ui/toast-emitter'
 
@@ -269,6 +269,19 @@ export function ReplyForm({
     })
   }
 
+  function handleForceTake() {
+    startLockTransition(async () => {
+      const result = await forceTakeLock(inquiryId)
+      if (result.success) {
+        setLockStatus({ state: 'locked_by_me' })
+        lockAttempted.current = true
+        emitToast('対応を引き継ぎました')
+      } else {
+        emitToast('引き継ぎに失敗しました', 'error')
+      }
+    })
+  }
+
   function handleSend(action: SendAction) {
     if (!body.trim() || lockStatus.state !== 'locked_by_me') return
     startSendTransition(async () => {
@@ -318,14 +331,23 @@ export function ReplyForm({
   return (
     <div className="flex-shrink-0 border-t border-gray-200 bg-white px-4 py-3">
       {isOtherLocked && (
-        <div className="mb-2 flex items-center gap-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded-md px-3 py-2">
-          <span className="text-red-500">⚠</span>
-          <span>
-            <span className="font-semibold">
-              {(lockStatus as { state: 'locked_by_other'; lockedByName: string }).lockedByName}
+        <div className="mb-2 flex items-center justify-between gap-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded-md px-3 py-2">
+          <span className="flex items-center gap-1.5">
+            <span className="text-red-500">⚠</span>
+            <span>
+              <span className="font-semibold">
+                {(lockStatus as { state: 'locked_by_other'; lockedByName: string }).lockedByName}
+              </span>
+              さんが対応中です。
             </span>
-            さんが対応中です。編集できません。
           </span>
+          <button
+            onClick={handleForceTake}
+            disabled={isPending}
+            className="flex-shrink-0 underline hover:text-red-900 disabled:opacity-50 whitespace-nowrap"
+          >
+            強制的に引き継ぐ
+          </button>
         </div>
       )}
       {isMeLocked && (

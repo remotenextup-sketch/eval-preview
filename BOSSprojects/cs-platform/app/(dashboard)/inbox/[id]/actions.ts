@@ -512,15 +512,35 @@ export async function acquireLock(
   inquiryId: string,
 ): Promise<{ success: true } | { success: false; lockedByName: string }> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { success: false, lockedByName: '不明なユーザー' }
+  const { data: authData } = await supabase.auth.getUser()
+  if (!authData.user) return { success: false, lockedByName: '認証エラー（再ログインしてください）' }
+  const user = authData.user
 
   const { data, error } = await supabase.rpc('try_acquire_inquiry_lock', {
     p_inquiry_id: inquiryId,
     p_user_id: user.id,
   })
 
-  if (error || !data) return { success: false, lockedByName: '不明なユーザー' }
+  // RPC失敗時はフォールバック：直接 UPDATE で取得を試みる
+  if (error || !data) {
+    const LOCK_EXPIRE_MIN = 30
+    const { data: updated } = await supabase
+      .from('inquiries')
+      .update({ locked_by: user.id, locked_at: new Date().toISOString() })
+      .eq('id', inquiryId)
+      .or(`locked_by.is.null,locked_at.lt.${new Date(Date.now() - LOCK_EXPIRE_MIN * 60 * 1000).toISOString()}`)
+      .select('id')
+      .single()
+    if (updated) {
+      revalidatePath(`/inbox/${inquiryId}`)
+      return { success: true }
+    }
+    const { data: inq } = await supabase.from('inquiries').select('locked_by').eq('id', inquiryId).single()
+    const { data: holder } = inq?.locked_by
+      ? await supabase.from('users').select('display_name').eq('id', inq.locked_by).single()
+      : { data: null }
+    return { success: false, lockedByName: holder?.display_name ?? '他のユーザー' }
+  }
 
   const result = data as { acquired: boolean; was_expired: boolean; prev_locked_by: string | null }
 
@@ -556,6 +576,30 @@ export async function acquireLock(
     : { data: null }
 
   return { success: false, lockedByName: holder?.display_name ?? '他のユーザー' }
+}
+
+export async function forceTakeLock(
+  inquiryId: string,
+): Promise<{ success: boolean }> {
+  const supabase = await createClient()
+  const { data: authData } = await supabase.auth.getUser()
+  if (!authData.user) return { success: false }
+  const user = authData.user
+
+  await supabase.from('inquiries')
+    .update({ locked_by: user.id, locked_at: new Date().toISOString() })
+    .eq('id', inquiryId)
+
+  await supabase.from('activity_logs').insert({
+    inquiry_id: inquiryId,
+    actor_id: user.id,
+    action: 'locked',
+    before_val: null,
+    after_val: { locked_by: user.id, forced: true },
+  })
+
+  revalidatePath(`/inbox/${inquiryId}`)
+  return { success: true }
 }
 
 export async function releaseLock(inquiryId: string) {
