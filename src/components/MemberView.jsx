@@ -11,14 +11,6 @@ const RANK_PERIOD_DEFS = [
   { label: 'ディレクター',     from: 'director_at',    to: null,            rankValue: 'ディレクター' },
 ];
 
-const RANK_DEF_INDEX = {
-  'トレーニー': 1,
-  'パートナー': 2,
-  'リーダー': 3,
-  'スペシャリスト': 4,
-  'ディレクター': 5,
-};
-
 function formatYM(dateStr) {
   if (!dateStr) return '';
   return dateStr.slice(0, 7).replace('-', '/');
@@ -67,19 +59,22 @@ function AvatarCircle({ name, avatarUrl, size = 'md' }) {
 }
 
 function RankPeriods({ user }) {
-  const currentRankDefIndex = user.rank ? (RANK_DEF_INDEX[user.rank] ?? null) : null;
-
   const periods = RANK_PERIOD_DEFS
-    .map((def, idx) => {
+    .map((def) => {
       const fromDate = user[def.from];
       if (!fromDate) return null;
 
-      const isCurrentRank = currentRankDefIndex !== null ? idx === currentRankDefIndex : false;
+      // このランク定義が現在のランクかどうかを rankValue で判定
+      const isCurrentRank = def.rankValue !== null
+        ? user.rank === def.rankValue
+        : false; // オンボーディング行は現在ランク扱いしない
 
       let toDate;
       if (isCurrentRank) {
+        // 現在のランクは終了日なし（継続中）
         toDate = null;
       } else if (def.to) {
+        // 次のランクへの移行日が入っていればそれを終了日とする
         toDate = user[def.to] || null;
       } else {
         toDate = null;
@@ -268,7 +263,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
         supabase.from('evaluation_progress').select('item_no, rank, status').eq('user_name', progressName),
         supabase.from('evaluation_items').select('no').eq('rank', changes.rank).eq('status', 'active'),
       ]);
-      // 新ランクのレコードのみ除外対象（別ランクのitem_noは重複扱いしない）
       const existingNewRankNos = new Set((existing || []).filter(p => p.rank === changes.rank).map(p => p.item_no));
       const toInsert = (newItems || [])
         .filter(item => item.no != null && !existingNewRankNos.has(item.no))
@@ -297,7 +291,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
     const newRank = rankChangeNewRank;
     const oldRank = user.rank;
 
-    // 1. users.rank 更新
     const changes = { rank: newRank };
     const rankDateCol = getRankDateColumn(newRank);
     if (rankDateCol && !user[rankDateCol]) changes[rankDateCol] = new Date().toISOString().slice(0, 10);
@@ -308,14 +301,12 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       return;
     }
 
-    // 2. 既存 progress と新ランク items を取得（statusも必ず取得）
     const [{ data: existing }, { data: newItems }] = await Promise.all([
       supabase.from('evaluation_progress').select('id, item_no, rank, status').eq('user_name', progressName),
       supabase.from('evaluation_items').select('no').eq('rank', newRank).eq('status', 'active'),
     ]);
     const newRankNos = new Set((newItems || []).map(i => i.no));
 
-    // 3. statusが必ずpendingであるレコードのみをrankを新ランクに修正（completedは絶対に触らない）
     const toUpdate = (existing || []).filter(p =>
       p.status === 'pending' &&
       (p.rank === null || p.rank === oldRank) &&
@@ -331,8 +322,6 @@ export default function MembersView({ onUsersRefresh, availableRanks = RANK_OPTI
       else console.error('rank更新エラー:', updateErr);
     }
 
-    // 4. 新ランク items のうち未作成のもの（新ランクでのitem_noが存在しないもの）のみ新規作成
-    // ユニーク制約が(user_name, item_no, rank)になったため、別ランクの同item_noは除外対象外
     const alreadyCoveredByNewRank = new Set([
       ...(existing || []).filter(p => p.rank === newRank).map(p => p.item_no),
       ...toUpdate.map(p => p.item_no),
