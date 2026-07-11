@@ -353,14 +353,14 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                         {rawPayloadAttachments.map((att, i) => (
                           <a
                             key={i}
-                            href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                            href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="block"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                              src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
                               alt={att.label}
                               className="max-w-[200px] max-h-[200px] rounded-lg border border-gray-200 object-cover"
                             />
@@ -402,14 +402,14 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                             {rawPayloadAttachments.map((att, i) => (
                               <a
                                 key={i}
-                                href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                                href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="block"
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                                  src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
                                   alt={att.label}
                                   className="max-w-[200px] max-h-[200px] rounded-lg border border-gray-200 object-cover"
                                 />

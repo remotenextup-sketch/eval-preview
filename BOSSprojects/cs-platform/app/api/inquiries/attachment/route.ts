@@ -14,8 +14,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const path = searchParams.get('path')
+  const inquiryNumber = searchParams.get('inquiryNumber')
   if (!path) {
     return NextResponse.json({ error: 'path is required' }, { status: 400 })
+  }
+  if (!inquiryNumber) {
+    return NextResponse.json({ error: 'inquiryNumber is required' }, { status: 400 })
   }
 
   const proxyUrl = process.env.BOSS_API_PROXY_URL
@@ -24,7 +28,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'BOSS_API_PROXY_URL not set' }, { status: 500 })
   }
 
-  const url = `${proxyUrl}/api/boss/inquiry/attachment?path=${encodeURIComponent(path)}`
+  const url = `${proxyUrl}/api/boss/inquiry/attachment?path=${encodeURIComponent(path)}&inquiryNumber=${encodeURIComponent(inquiryNumber)}`
   const res = await fetch(url, {
     headers: {
       ...(proxyKey ? { 'x-api-key': proxyKey } : {}),
