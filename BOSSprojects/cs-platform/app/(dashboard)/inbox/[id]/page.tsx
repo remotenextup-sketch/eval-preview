@@ -220,6 +220,13 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
     : false
   const lockedByOther = !!inq.locked_by && inq.locked_by !== user.id && !lockExpired
 
+  // 楽天問い合わせの添付ファイル（raw_payload.attachments）
+  type RakutenAttachment = { path: string; label: string }
+  const rawPayloadAttachments: RakutenAttachment[] =
+    Array.isArray((inq.raw_payload as Record<string, unknown> | null)?.attachments)
+      ? ((inq.raw_payload as Record<string, unknown>).attachments as RakutenAttachment[])
+      : []
+
   // AI下書きは ai_logs.result.draft から取得（inquiry_messages には保存しない）
   const existingDraft = latestAiLog
     && latestAiLog.feedback !== 'accepted'
@@ -341,15 +348,38 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                     <div className="rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-white border border-gray-200 text-gray-800 rounded-tl-none">
                       {inq.subject ?? '（本文なし）'}
                     </div>
+                    {rawPayloadAttachments.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {rawPayloadAttachments.map((att, i) => (
+                          <a
+                            key={i}
+                            href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                              alt={att.label}
+                              className="max-w-[200px] max-h-[200px] rounded-lg border border-gray-200 object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-xs text-gray-400 mt-1">
                       {new Date(inq.received_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </div>
               ) : (
-                messages.map((msg) => {
+                messages.map((msg, msgIdx) => {
                   const isInbound = msg.direction === 'inbound'
                   const isAI = msg.is_ai_draft
+                  // 最初のinboundメッセージにraw_payloadの添付ファイルを表示
+                  const firstInboundIdx = messages.findIndex(m => m.direction === 'inbound')
+                  const showAttachments = isInbound && msgIdx === firstInboundIdx && rawPayloadAttachments.length > 0
                   return (
                     <div key={msg.id} className={`flex gap-2 ${isInbound ? '' : 'flex-row-reverse'}`}>
                       <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-medium ${
@@ -367,6 +397,26 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                         }`}>
                           {msg.body || '（本文なし）'}
                         </div>
+                        {showAttachments && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {rawPayloadAttachments.map((att, i) => (
+                              <a
+                                key={i}
+                                href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}`}
+                                  alt={att.label}
+                                  className="max-w-[200px] max-h-[200px] rounded-lg border border-gray-200 object-cover"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        )}
                         <p className={`text-xs text-gray-400 mt-1 ${isInbound ? '' : 'text-right'}`}>
                           {isAI && <span className="text-purple-400 mr-1">AIドラフト</span>}
                           {new Date(msg.sent_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
