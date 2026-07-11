@@ -16,6 +16,7 @@ import { getCustomerLinkCandidates, getCustomerInquiryHistory } from '@/lib/cust
 import type { InquiryStatus, DbUser, DbInquiry, DbTag, DbCustomerProfile } from '@/lib/types'
 import { channelMeta } from '@/lib/channel-meta'
 import { AddToCasesButton } from './AddToCasesButton'
+import { AttachmentImage } from './AttachmentImage'
 import { SupportActionsSection } from './SupportActionsSection'
 import type { SupportAction } from './SupportActionsSection'
 import { BossActionsSection } from './BossActionsSection'
@@ -351,20 +352,11 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                     {rawPayloadAttachments.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {rawPayloadAttachments.map((att, i) => (
-                          <a
+                          <AttachmentImage
                             key={i}
-                            href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
-                              alt={att.label}
-                              className="max-w-[200px] max-h-[200px] rounded-lg border border-gray-200 object-cover"
-                            />
-                          </a>
+                            src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
+                            label={att.label}
+                          />
                         ))}
                       </div>
                     )}
@@ -400,20 +392,11 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                         {showAttachments && (
                           <div className="mt-1.5 flex flex-wrap gap-1.5">
                             {rawPayloadAttachments.map((att, i) => (
-                              <a
+                              <AttachmentImage
                                 key={i}
-                                href={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
-                                  alt={att.label}
-                                  className="max-w-[200px] max-h-[200px] rounded-lg border border-gray-200 object-cover"
-                                />
-                              </a>
+                                src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
+                                label={att.label}
+                              />
                             ))}
                           </div>
                         )}
