@@ -354,7 +354,7 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                         {rawPayloadAttachments.map((att, i) => (
                           <AttachmentImage
                             key={i}
-                            src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
+                            src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&label=${encodeURIComponent(att.label)}`}
                             label={att.label}
                           />
                         ))}
@@ -394,7 +394,7 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                             {rawPayloadAttachments.map((att, i) => (
                               <AttachmentImage
                                 key={i}
-                                src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&inquiryNumber=${encodeURIComponent(inq.external_id ?? '')}`}
+                                src={`/api/inquiries/attachment?path=${encodeURIComponent(att.path)}&label=${encodeURIComponent(att.label)}`}
                                 label={att.label}
                               />
                             ))}
