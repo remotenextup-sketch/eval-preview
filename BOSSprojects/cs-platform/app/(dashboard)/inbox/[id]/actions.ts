@@ -542,7 +542,14 @@ export async function acquireLock(
     ? await db.from('users').select('display_name').eq('id', inq.locked_by).single()
     : { data: null }
 
-  return { success: false, lockedByName: holder?.display_name ?? '他のユーザー' }
+  // usersテーブルに未登録の場合は auth.users のメールを fallback で使う
+  let lockedByName = holder?.display_name ?? null
+  if (!lockedByName && inq?.locked_by) {
+    const { data: authUser } = await db.auth.admin.getUserById(inq.locked_by)
+    lockedByName = authUser?.user?.email ?? null
+  }
+
+  return { success: false, lockedByName: lockedByName ?? '他のユーザー' }
 }
 
 export async function forceTakeLock(
