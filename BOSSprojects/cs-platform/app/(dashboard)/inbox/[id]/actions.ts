@@ -212,10 +212,23 @@ export async function sendReply(
       auth: { user: gmailUser, pass: gmailPass },
     })
 
+    // 最新の inbound メッセージの RFC Message-ID を優先（metadata.rfc_message_id）
+    // フォールバック: inquiry レベルの raw_payload.gmail_message_id
+    // metadata カラムはマイグレーション 024 で追加（型定義未更新のため any キャスト）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: lastInbound } = await (supabase as any)
+      .from('inquiry_messages')
+      .select('metadata')
+      .eq('inquiry_id', inquiryId)
+      .eq('direction', 'inbound')
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
     const rawPayload = inq.raw_payload as Record<string, unknown> | null
-    const originalMessageId = typeof rawPayload?.gmail_message_id === 'string'
-      ? rawPayload.gmail_message_id
-      : null
+    const originalMessageId =
+      ((lastInbound?.metadata as Record<string, unknown> | null)?.rfc_message_id as string | null)
+      ?? (typeof rawPayload?.gmail_message_id === 'string' ? rawPayload.gmail_message_id : null)
 
     const subjectLine = inq.subject
       ? (inq.subject.startsWith('Re:') ? inq.subject : `Re: ${inq.subject}`)

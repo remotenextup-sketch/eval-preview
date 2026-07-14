@@ -62,12 +62,8 @@ function resolveExternalId(
   return { externalId }
 }
 
-// 店舗/マーチャント側の返信者を示す値。これに該当する場合は CS 対応対象としない（open にしない）
 const MERCHANT_SENDER_TYPES = new Set(['merchant', 'shop', 'store', 'seller'])
 
-// is_completed=true → 履歴同期のみ、CS 対応対象にしない（resolved）
-// last_reply_from が merchant 系 → open にしない（pending）
-// それ以外 → open
 function resolveInitialStatus(
   lastReplyFrom: string | null | undefined,
   isCompleted: boolean,
@@ -75,6 +71,41 @@ function resolveInitialStatus(
   if (isCompleted) return 'resolved'
   if (lastReplyFrom && MERCHANT_SENDER_TYPES.has(lastReplyFrom.toLowerCase())) return 'pending'
   return 'open'
+}
+
+// =============================================
+// システムメール判定
+// =============================================
+const SYSTEM_SENDER_PATTERNS = [
+  /noreply@/i,
+  /no-reply@/i,
+  /notifications@/i,
+  /@goqsystem\./i,
+  /@github\.com$/i,
+  /mailer-daemon@/i,
+  /postmaster@/i,
+]
+const SYSTEM_SUBJECT_PATTERNS = [
+  /楽天ランキング/,
+  /ログイン通知/,
+  /security vulnerabilities/i,
+  /dependabot/i,
+  /unsubscribe/i,
+  /\[ビジネスID\]/,
+  /Action required/i,
+]
+
+function isSystemEmail(from: string, subject: string): boolean {
+  if (SYSTEM_SENDER_PATTERNS.some((p) => p.test(from))) return true
+  if (SYSTEM_SUBJECT_PATTERNS.some((p) => p.test(subject))) return true
+  return false
+}
+
+// "Display Name <email@example.com>" または "email@example.com" からアドレス部分を抽出
+function extractEmailAddress(raw: string | null): string | null {
+  if (!raw) return null
+  const match = raw.match(/<([^>]+)>/)
+  return (match ? match[1] : raw).trim().toLowerCase() || null
 }
 
 export async function POST(req: NextRequest) {
@@ -101,18 +132,340 @@ export async function POST(req: NextRequest) {
       replies,
       last_reply_from,
       is_completed,
+      // メール専用フィールド（email チャネルのみ使用）
+      gmail_thread_id,
+      gmail_message_id,
+      rfc_message_id,
+      direction: emailDirectionRaw,
+      from: fromHeader,
+      to: toHeader,
     } = body
 
-    if (!rawChannel || !bodyText) {
+    if (!rawChannel) {
       return NextResponse.json(
-        { ok: false, reason: 'source_channel and body are required' },
+        { ok: false, reason: 'source_channel is required' },
         { status: 400 }
       )
     }
 
     const channel = normalizeChannel(rawChannel)
 
-    // トップレベルフィールドが未指定の場合は raw_payload から補完
+    // email チャネルは bodyText が空でも許容（添付のみのメール等）
+    if (!bodyText && channel !== 'email') {
+      return NextResponse.json(
+        { ok: false, reason: 'body is required' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createServiceClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+
+    // mall_id を取得（全チャネル共通）
+    const { data: mall } = await supabase
+      .from('malls')
+      .select('id')
+      .eq('code', channel)
+      .single()
+
+    if (!mall) {
+      return NextResponse.json(
+        { ok: false, reason: 'mall_not_found', channel },
+        { status: 422 }
+      )
+    }
+
+    // =============================================
+    // メールチャネル専用処理
+    // =============================================
+    if (channel === 'email') {
+      const gmailThreadId = typeof gmail_thread_id === 'string' ? gmail_thread_id.trim() : null
+      const gmailMessageId = typeof gmail_message_id === 'string' ? gmail_message_id.trim() : null
+      const rfcMessageId = typeof rfc_message_id === 'string' ? rfc_message_id.trim() : null
+      const emailDirection: 'inbound' | 'outbound' = emailDirectionRaw === 'outbound' ? 'outbound' : 'inbound'
+      const fromHeaderStr = typeof fromHeader === 'string' ? fromHeader.trim() : null
+      const toHeaderStr = typeof toHeader === 'string' ? toHeader.trim() : null
+
+      // inbound なら送信者が顧客、outbound なら宛先が顧客
+      const customerEmailForProfile = emailDirection === 'inbound'
+        ? extractEmailAddress(fromHeaderStr)
+        : extractEmailAddress(toHeaderStr)
+
+      // Step 1: システムメール判定（inquiry も messages も作らない）
+      const fromForCheck = extractEmailAddress(fromHeaderStr) ?? fromHeaderStr ?? ''
+      const subjectForCheck = typeof subject === 'string' ? subject : ''
+      if (isSystemEmail(fromForCheck, subjectForCheck)) {
+        return NextResponse.json({ ok: true, skipped: true, reason: 'system_email' })
+      }
+
+      if (!gmailMessageId) {
+        return NextResponse.json(
+          { ok: false, reason: 'gmail_message_id is required for email channel' },
+          { status: 400 }
+        )
+      }
+
+      // Step 2: メッセージ重複チェック
+      const { data: existingMsg } = await db
+        .from('inquiry_messages')
+        .select('id, inquiry_id')
+        .eq('source_channel', 'email')
+        .eq('external_message_id', gmailMessageId)
+        .maybeSingle()
+
+      if (existingMsg) {
+        return NextResponse.json({
+          ok: true,
+          skipped: true,
+          reason: 'duplicate_message_id',
+          inquiry_id: existingMsg.inquiry_id,
+        })
+      }
+
+      // Step 3: Thread ID で inquiry 検索
+      let emailInquiry: { id: string; customer_profile_id: string | null; status: string } | null = null
+      let isFoundByThread = false
+
+      if (gmailThreadId) {
+        const { data: byThread } = await db
+          .from('inquiries')
+          .select('id, customer_profile_id, status')
+          .eq('source_channel', 'email')
+          .eq('external_id', gmailThreadId)
+          .maybeSingle() as { data: typeof emailInquiry }
+
+        if (byThread) {
+          emailInquiry = byThread
+          isFoundByThread = true
+        }
+      }
+
+      // Step 4: order_number フォールバック（候補が複数なら統合しない）
+      if (!emailInquiry && order_number) {
+        const { data: byOrder } = await db
+          .from('inquiries')
+          .select('id, customer_profile_id, status')
+          .eq('source_channel', 'email')
+          .eq('order_number', String(order_number).trim())
+          .not('status', 'in', '("resolved","spam")')
+          .gte('updated_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()) as {
+            data: Array<{ id: string; customer_profile_id: string | null; status: string }> | null
+          }
+
+        if (byOrder && byOrder.length === 1) {
+          emailInquiry = byOrder[0]
+        }
+      }
+
+      // Step 5: inquiry 作成（見つからない場合）
+      let emailInquiryId: string
+      let emailIsNew: boolean
+
+      if (emailInquiry) {
+        emailInquiryId = emailInquiry.id
+        emailIsNew = false
+      } else {
+        const initialStatus = emailDirection === 'inbound' ? 'open' : 'pending'
+        const { data: inserted, error: insertErr } = await supabase
+          .from('inquiries')
+          .insert({
+            mall_id: mall.id,
+            source_channel: 'email',
+            external_id: gmailThreadId ?? gmailMessageId,
+            subject: subject ? String(subject) : null,
+            customer_name: customer_name ? String(customer_name) : null,
+            order_number: order_number ? String(order_number).trim() : null,
+            received_at: received_at ? String(received_at) : new Date().toISOString(),
+            raw_payload: raw_payload ?? { gmail_thread_id: gmailThreadId, gmail_message_id: gmailMessageId },
+            status: initialStatus,
+          })
+          .select('id')
+          .single()
+
+        if (insertErr || !inserted) {
+          return NextResponse.json(
+            { ok: false, reason: 'inquiry_insert_failed', detail: insertErr?.message },
+            { status: 500 }
+          )
+        }
+        emailInquiryId = inserted.id
+        emailIsNew = true
+        emailInquiry = { id: emailInquiryId, customer_profile_id: null, status: initialStatus }
+      }
+
+      // Step 6: メッセージ保存
+      const { error: msgErr } = await db.from('inquiry_messages').upsert(
+        {
+          inquiry_id: emailInquiryId,
+          source_channel: 'email',
+          external_message_id: gmailMessageId,
+          direction: emailDirection,
+          sender_type: emailDirection === 'inbound' ? 'customer' : 'staff',
+          body: bodyText || '',
+          sent_at: received_at ? String(received_at) : new Date().toISOString(),
+          metadata: { rfc_message_id: rfcMessageId, from: fromHeaderStr, to: toHeaderStr },
+        },
+        { onConflict: 'source_channel,external_message_id', ignoreDuplicates: true }
+      )
+      if (msgErr) {
+        console.error('[intake/email] message upsert failed', msgErr)
+      }
+
+      // Step 7: ステータス更新
+      if (emailDirection === 'inbound' && emailInquiry.status === 'pending') {
+        // 顧客が返信 → open に戻す
+        await supabase.from('inquiries').update({ status: 'open' }).eq('id', emailInquiryId)
+      } else if (
+        emailDirection === 'outbound' &&
+        emailInquiry.status === 'open' &&
+        isFoundByThread
+      ) {
+        // スタッフ返信 → pending に変更するが、条件を確認する
+        // (a) to が顧客メールアドレスと一致、(b) Thread ID で見つかった既存 inquiry
+        const toEmail = extractEmailAddress(toHeaderStr)
+        let savedCustomerEmail: string | null = null
+        if (emailInquiry.customer_profile_id) {
+          const { data: profile } = await db
+            .from('customer_profiles')
+            .select('customer_email')
+            .eq('id', emailInquiry.customer_profile_id)
+            .maybeSingle()
+          savedCustomerEmail = profile?.customer_email
+            ? String(profile.customer_email).toLowerCase()
+            : null
+        }
+        if (toEmail && savedCustomerEmail && toEmail === savedCustomerEmail) {
+          await supabase.from('inquiries').update({ status: 'pending' }).eq('id', emailInquiryId)
+        }
+      }
+
+      // Steps 5-9（顧客プロフィール管理）
+      let emailCustomerProfileId: string | null = emailInquiry.customer_profile_id ?? null
+
+      if (!emailCustomerProfileId && customerEmailForProfile) {
+        const { data: byEmail } = await supabase
+          .from('customer_identities')
+          .select('customer_profile_id')
+          .eq('identifier_type', 'email')
+          .eq('normalized_value', customerEmailForProfile)
+          .maybeSingle()
+        if (byEmail) emailCustomerProfileId = byEmail.customer_profile_id
+      }
+
+      if (!emailCustomerProfileId && order_number) {
+        const { data: byOrd } = await supabase
+          .from('customer_identities')
+          .select('customer_profile_id')
+          .eq('identifier_type', 'order_number')
+          .eq('normalized_value', String(order_number).trim())
+          .maybeSingle()
+        if (byOrd) emailCustomerProfileId = byOrd.customer_profile_id
+      }
+
+      if (!emailCustomerProfileId) {
+        const { data: newProfile, error: profileErr } = await supabase
+          .from('customer_profiles')
+          .insert({
+            customer_name: customer_name ?? null,
+            customer_email: customerEmailForProfile ?? null,
+            primary_email: customerEmailForProfile ?? null,
+          })
+          .select('id')
+          .single()
+
+        if (profileErr || !newProfile) {
+          console.error('[intake/email] customer_profile insert failed', profileErr?.message)
+        } else {
+          emailCustomerProfileId = newProfile.id
+        }
+      }
+
+      if (emailCustomerProfileId) {
+        if (customerEmailForProfile) {
+          const { data: emailExists } = await supabase
+            .from('customer_identities')
+            .select('id')
+            .eq('customer_profile_id', emailCustomerProfileId)
+            .eq('identifier_type', 'email')
+            .eq('normalized_value', customerEmailForProfile)
+            .maybeSingle()
+
+          if (!emailExists) {
+            await supabase.from('customer_identities').insert({
+              customer_profile_id: emailCustomerProfileId,
+              channel: 'email',
+              identifier_type: 'email',
+              identifier_value: customerEmailForProfile,
+              normalized_value: customerEmailForProfile,
+              confidence: 1.0,
+              verified: false,
+              source_inquiry_id: emailInquiryId,
+            })
+          }
+        }
+
+        if (order_number) {
+          const normalizedOrder = String(order_number).trim()
+          const { data: orderExists } = await supabase
+            .from('customer_identities')
+            .select('id')
+            .eq('customer_profile_id', emailCustomerProfileId)
+            .eq('identifier_type', 'order_number')
+            .eq('normalized_value', normalizedOrder)
+            .maybeSingle()
+
+          if (!orderExists) {
+            await supabase.from('customer_identities').insert({
+              customer_profile_id: emailCustomerProfileId,
+              channel: 'email',
+              identifier_type: 'order_number',
+              identifier_value: normalizedOrder,
+              normalized_value: normalizedOrder,
+              confidence: 1.0,
+              verified: false,
+              source_inquiry_id: emailInquiryId,
+            })
+          }
+        }
+
+        await supabase
+          .from('inquiries')
+          .update({ customer_profile_id: emailCustomerProfileId })
+          .eq('id', emailInquiryId)
+
+        const { count: inquiryCount } = await supabase
+          .from('inquiries')
+          .select('*', { count: 'exact', head: true })
+          .eq('customer_profile_id', emailCustomerProfileId)
+
+        await supabase
+          .from('customer_profiles')
+          .update({ inquiry_count: inquiryCount ?? 0 })
+          .eq('id', emailCustomerProfileId)
+      }
+
+      if (emailIsNew) {
+        await supabase.from('activity_logs').insert({
+          inquiry_id: emailInquiryId,
+          actor_id: null,
+          action: 'intake_received',
+          after_val: { source_channel: 'email', gmail_thread_id: gmailThreadId, gmail_message_id: gmailMessageId },
+        })
+      }
+
+      return NextResponse.json({
+        ok: true,
+        inquiry_id: emailInquiryId,
+        customer_profile_id: emailCustomerProfileId,
+        is_new: emailIsNew,
+      })
+    }
+
+    // =============================================
+    // 楽天・その他チャネル（既存処理）
+    // =============================================
+
     const rawPayloadMap = (raw_payload as Record<string, unknown>) ?? {}
     const resolvedIsCompleted: boolean =
       is_completed != null
@@ -127,6 +480,13 @@ export async function POST(req: NextRequest) {
       return last?.['replyFrom'] ? String(last['replyFrom']) : null
     })()
 
+    if (!bodyText) {
+      return NextResponse.json(
+        { ok: false, reason: 'body is required' },
+        { status: 400 }
+      )
+    }
+
     const resolvedExternalId = resolveExternalId(channel, external_inquiry_id, raw_payload)
     if (!resolvedExternalId.externalId) {
       return NextResponse.json(
@@ -138,23 +498,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
-    // 楽天は raw_payload の inquiryNumber を正として DB の external_id に保存する。
     const externalId = resolvedExternalId.externalId
-    const supabase = createServiceClient()
-
-    // 1. mall_id を取得
-    const { data: mall } = await supabase
-      .from('malls')
-      .select('id')
-      .eq('code', channel)
-      .single()
-
-    if (!mall) {
-      return NextResponse.json(
-        { ok: false, reason: 'mall_not_found', channel },
-        { status: 422 }
-      )
-    }
 
     // 2. 既存 inquiry を確認（重複受信対策）
     const { data: existing } = await supabase
@@ -171,8 +515,6 @@ export async function POST(req: NextRequest) {
       inquiryId = existing.id
       isNew = false
 
-      // spam は上書きしない。resolved は原則保護するが、
-      // 「お客様が再返信（isCompleted=false かつ last_reply_from=user）」の場合は open に戻す。
       const isCustomerReReply =
         existing.status === 'resolved' &&
         !resolvedIsCompleted &&
@@ -185,7 +527,6 @@ export async function POST(req: NextRequest) {
         ? (isCustomerReReply ? 'open' : resolveInitialStatus(resolvedLastReplyFrom, resolvedIsCompleted))
         : undefined
 
-      // raw_payload は常に最新化、status は条件付きで更新
       await supabase
         .from('inquiries')
         .update({
@@ -194,9 +535,6 @@ export async function POST(req: NextRequest) {
         })
         .eq('id', inquiryId)
     } else {
-      // 3. 新規 inquiry を INSERT
-      // is_completed=true → resolved（履歴同期のみ、CS 対応対象にしない）
-      // last_reply_from が merchant 系 → pending（open にしない）
       const initialStatus = resolveInitialStatus(resolvedLastReplyFrom, resolvedIsCompleted)
       const { data: inserted, error: insertErr } = await supabase
         .from('inquiries')
@@ -224,8 +562,7 @@ export async function POST(req: NextRequest) {
       isNew = true
     }
 
-    // 4. replies[] を解決（ステップ4aの insert 判定に使うため先に計算）
-    // replies が未指定の場合は raw_payload.replies を使う
+    // 4. replies[] を解決
     const repliesData: unknown[] = Array.isArray(replies)
       ? replies
       : Array.isArray((raw_payload as Record<string, unknown> | null)?.['replies'])
@@ -233,10 +570,10 @@ export async function POST(req: NextRequest) {
         : []
 
     // 4a. 新規のみ: 受信メッセージを追加
-    // repliesData がある場合は初回 body も replies に含まれているため、4b の同期に任せて二重登録を避ける
     if (isNew && repliesData.length === 0) {
-      await supabase.from('inquiry_messages').insert({
+      await db.from('inquiry_messages').insert({
         inquiry_id: inquiryId,
+        source_channel: channel,
         direction: 'inbound',
         sender_type: 'customer',
         body: bodyText,
@@ -245,7 +582,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 4b. replies[] を inquiry_messages に同期（新規・既存どちらも、冪等）
+    // 4b. replies[] を inquiry_messages に同期（冪等）
     let repliesSyncError: string | null = null
     if (repliesData.length > 0 && externalId) {
       const replyRows = (repliesData as Array<{
@@ -254,10 +591,10 @@ export async function POST(req: NextRequest) {
         regDate?: string
         replyFrom?: string
       }>).map((r, idx) => {
-        // replyFrom: 'user' → inbound/customer, 'merchant' → outbound/staff
         const isCustomer = r.replyFrom === 'user'
         return {
           inquiry_id: inquiryId,
+          source_channel: channel,
           direction: (isCustomer ? 'inbound' : 'outbound') as 'inbound' | 'outbound',
           sender_type: (isCustomer ? 'customer' : 'staff') as 'customer' | 'staff',
           body: String(r.message ?? ''),
@@ -267,9 +604,9 @@ export async function POST(req: NextRequest) {
       }).filter((r) => r.body.trim().length > 0)
 
       if (replyRows.length > 0) {
-        const { error: upsertErr } = await supabase
+        const { error: upsertErr } = await db
           .from('inquiry_messages')
-          .upsert(replyRows, { onConflict: 'inquiry_id,external_message_id', ignoreDuplicates: true })
+          .upsert(replyRows, { onConflict: 'source_channel,external_message_id', ignoreDuplicates: true })
         if (upsertErr) {
           console.error('[intake] replies upsert failed', upsertErr)
           repliesSyncError = upsertErr.message
@@ -278,7 +615,6 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. customer_profile を解決（email → order_number の順で検索）
-    // TODO: external_customer_key (楽天 masked_email 等) での検索も将来追加
     let customerProfileId: string | null = existing?.customer_profile_id ?? null
 
     if (!customerProfileId && from_email) {
@@ -322,7 +658,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (customerProfileId) {
-      // 7. customer_identities へ登録（SELECT-then-INSERT、email と order_number のみ）
+      // 7. customer_identities へ登録
       if (from_email) {
         const normalizedEmail = (from_email as string).trim().toLowerCase()
         const { data: emailExists } = await supabase
@@ -433,7 +769,6 @@ export async function POST(req: NextRequest) {
               items: Array<{ itemName: string; skuCode: string; unitPrice: number | null; quantity: number | null }>
             }
 
-            // rakuten mall_id を取得
             const { data: rakutenMall } = await supabase
               .from('malls')
               .select('id')
@@ -441,8 +776,6 @@ export async function POST(req: NextRequest) {
               .maybeSingle()
             if (!rakutenMall) return
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const db = supabase as any
             const { data: upsertedOrder } = await db
               .from('orders')
               .upsert({
@@ -469,7 +802,6 @@ export async function POST(req: NextRequest) {
 
             if (!upsertedOrder?.id) return
 
-            // items を保存（既存がなければ INSERT）
             if (o.items && o.items.length > 0) {
               const { count: existingCount } = await db
                 .from('order_items')
