@@ -218,7 +218,7 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
   const LOCK_TIMEOUT_MS = 30 * 60 * 1000
   const lockExpired = inq.locked_at
     ? Date.now() - new Date(inq.locked_at).getTime() > LOCK_TIMEOUT_MS
-    : false
+    : true
   const lockedByOther = !!inq.locked_by && inq.locked_by !== user.id && !lockExpired
 
   // 楽天問い合わせの添付ファイル（raw_payload.attachments）
@@ -336,7 +336,7 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                   ))}
                 </div>
               )}
-              <CommentForm inquiryId={id} lockedByOther={lockedByOther} />
+              <CommentForm inquiryId={id} />
             </div>
 
             <div className="space-y-3">
@@ -419,10 +419,6 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
           <ReplyForm
             inquiryId={id}
             aiDraftBody={existingDraft?.body}
-            currentUserId={user.id}
-            initialLockedById={inq.locked_by}
-            initialLockedByName={inq.lock_holder?.display_name ?? null}
-            initialLockedAt={inq.locked_at}
           />
           </div>
 

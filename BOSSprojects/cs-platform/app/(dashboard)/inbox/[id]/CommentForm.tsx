@@ -6,17 +6,15 @@ import { addComment } from './actions'
 
 type Props = {
   inquiryId: string
-  lockedByOther?: boolean
 }
 
-export function CommentForm({ inquiryId, lockedByOther }: Props) {
+export function CommentForm({ inquiryId }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (lockedByOther) return
     const body = ref.current?.value.trim()
     if (!body) return
     startTransition(async () => {
@@ -30,14 +28,14 @@ export function CommentForm({ inquiryId, lockedByOther }: Props) {
     <form onSubmit={handleSubmit} className="mt-3 space-y-2">
       <textarea
         ref={ref}
-        placeholder={lockedByOther ? '他のユーザーが対応中です' : '内部コメントを入力...'}
+        placeholder="内部コメントを入力..."
         rows={3}
-        disabled={isPending || lockedByOther}
+        disabled={isPending}
         className="w-full text-sm border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:opacity-60"
       />
       <button
         type="submit"
-        disabled={isPending || lockedByOther}
+        disabled={isPending}
         className="text-xs bg-gray-700 hover:bg-gray-900 text-white px-3 py-1.5 rounded disabled:opacity-50"
       >
         {isPending ? '送信中...' : 'コメント追加'}
