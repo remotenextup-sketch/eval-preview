@@ -29,9 +29,11 @@ export async function loginAs(email: string): Promise<{ error: string } | undefi
   redirect('/inbox')
 }
 
-export async function addCsMember(name: string): Promise<{ error?: string }> {
+export async function addCsMember(name: string, loginId: string): Promise<{ error?: string }> {
   if (!name.trim()) return { error: '名前を入力してください' }
-  const email = `${name.trim().toLowerCase().replace(/\s+/g, '_')}@cs.local`
+  if (!loginId.trim()) return { error: 'ログインIDを入力してください' }
+  if (!/^[a-z0-9_]+$/.test(loginId.trim())) return { error: 'ログインIDは英小文字・数字・_のみ使用できます' }
+  const email = `${loginId.trim()}@cs.local`
   const db = serviceClient()
 
   const { data: existing } = await db.from('users').select('id, is_active').eq('email', email).maybeSingle()

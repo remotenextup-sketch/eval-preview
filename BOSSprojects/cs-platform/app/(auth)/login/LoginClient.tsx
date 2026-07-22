@@ -15,6 +15,7 @@ export function LoginClient({ members }: { members: Member[] }) {
   const [loadingEmail, setLoadingEmail] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newLoginId, setNewLoginId] = useState('')
 
   function handleSelect(email: string) {
     if (editMode) return
@@ -36,14 +37,15 @@ export function LoginClient({ members }: { members: Member[] }) {
   }
 
   function handleAdd() {
-    if (!newName.trim()) return
+    if (!newName.trim() || !newLoginId.trim()) return
     setError(null)
     startTransition(async () => {
-      const result = await addCsMember(newName.trim())
+      const result = await addCsMember(newName.trim(), newLoginId.trim())
       if (result?.error) {
         setError(result.error)
       } else {
         setNewName('')
+        setNewLoginId('')
       }
     })
   }
@@ -92,20 +94,29 @@ export function LoginClient({ members }: { members: Member[] }) {
         </div>
 
         {editMode && (
-          <div className="mt-4 flex gap-2">
-            <input
-              type="text"
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              placeholder="名前を入力"
-              className="flex-1 text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="mt-4 space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="表示名（例：平山）"
+                className="flex-1 text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="text"
+                value={newLoginId}
+                onChange={e => setNewLoginId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                placeholder="ID（英数字: hirayama）"
+                className="flex-1 text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
             <button
               type="button"
-              disabled={isPending || !newName.trim()}
+              disabled={isPending || !newName.trim() || !newLoginId.trim()}
               onClick={handleAdd}
-              className="text-sm bg-gray-700 hover:bg-gray-900 text-white px-3 py-2 rounded-md disabled:opacity-50"
+              className="w-full text-sm bg-gray-700 hover:bg-gray-900 text-white px-3 py-2 rounded-md disabled:opacity-50"
             >
               追加
             </button>
