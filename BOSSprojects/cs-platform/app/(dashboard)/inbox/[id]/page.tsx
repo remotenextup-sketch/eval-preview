@@ -3,7 +3,7 @@ import { redirect, notFound } from 'next/navigation'
 import { ListPanel } from '@/components/inbox/ListPanel'
 import { InquiryListPanel } from '@/components/inbox/InquiryListPanel'
 import { StatusSelect } from './StatusSelect'
-import { AssigneeChips } from './AssigneeChips'
+import { AssigneeSelect } from './AssigneeSelect'
 import { CommentForm } from './CommentForm'
 import { AiDraftSection } from './AiDraftSection'
 import { TagsSection } from './TagsSection'
@@ -139,7 +139,6 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
     { data: rawCwMembers },
     { data: rawCwRoomMembers },
     { data: rawCwShares },
-    { data: rawInquiryAssignees },
   ] = await Promise.all([
     supabase.from('inquiry_messages')
       .select('*, sender:sender_id(id, display_name)')
@@ -185,8 +184,6 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
     (supabase as any).from('chatwork_room_members').select('room_id, member_id, is_default_mention'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('chatwork_shares').select('id, room_id, room_name, mentioned_names, comment, created_at').eq('inquiry_id', id).order('created_at', { ascending: false }).limit(20),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('inquiry_assignees').select('user_id, users:user_id(id, display_name)').eq('inquiry_id', id),
   ])
 
   const messages = (rawMessages ?? []) as unknown as MessageRow[]
@@ -216,9 +213,6 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
   const cwRoomMembers = (rawCwRoomMembers ?? []) as unknown as CwRoomMember[]
   const cwShares = (rawCwShares ?? []) as unknown as CwShareRow[]
 
-  type InquiryAssigneeRow = { user_id: string; users: { id: string; display_name: string } | null }
-  const inquiryAssignees = ((rawInquiryAssignees ?? []) as unknown as InquiryAssigneeRow[])
-    .flatMap((r) => r.users ? [r.users] : [])
 
   const currentStatus = inq.status as InquiryStatus
 
@@ -318,7 +312,7 @@ export default async function InquiryDetailPage({ params, searchParams }: Props)
                 roomMembers={cwRoomMembers}
                 recentShares={cwShares}
               />
-              <AssigneeChips inquiryId={id} assignees={inquiryAssignees} allUsers={users} />
+              <AssigneeSelect inquiryId={id} currentAssigneeId={inq.assignee_id} users={users} lockedByOther={lockedByOther} />
               <StatusSelect inquiryId={id} currentStatus={currentStatus} />
             </div>
           </div>
