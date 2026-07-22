@@ -691,6 +691,47 @@ export async function updateAssignee(inquiryId: string, assigneeId: string | nul
   revalidatePath('/inbox')
 }
 
+export async function addAssignee(inquiryId: string, userId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from('inquiry_assignees').insert({ inquiry_id: inquiryId, user_id: userId })
+
+  await supabase.from('activity_logs').insert({
+    inquiry_id: inquiryId,
+    actor_id: user.id,
+    action: 'assigned',
+    before_val: null,
+    after_val: { user_id: userId },
+  })
+
+  revalidatePath(`/inbox/${inquiryId}`)
+}
+
+export async function removeAssignee(inquiryId: string, userId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from('inquiry_assignees')
+    .delete()
+    .eq('inquiry_id', inquiryId)
+    .eq('user_id', userId)
+
+  await supabase.from('activity_logs').insert({
+    inquiry_id: inquiryId,
+    actor_id: user.id,
+    action: 'unassigned',
+    before_val: { user_id: userId },
+    after_val: null,
+  })
+
+  revalidatePath(`/inbox/${inquiryId}`)
+}
+
 export async function addComment(inquiryId: string, body: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
