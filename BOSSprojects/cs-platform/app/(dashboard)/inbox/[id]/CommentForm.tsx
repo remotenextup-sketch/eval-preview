@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { addComment } from './actions'
 
@@ -11,14 +11,20 @@ type Props = {
 export function CommentForm({ inquiryId }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [isPending, startTransition] = useTransition()
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const router = useRouter()
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const body = ref.current?.value.trim()
     if (!body) return
+    setErrorMsg(null)
     startTransition(async () => {
-      await addComment(inquiryId, body)
+      const result = await addComment(inquiryId, body)
+      if (result?.error) {
+        setErrorMsg(result.error)
+        return
+      }
       if (ref.current) ref.current.value = ''
       router.refresh()
     })
@@ -33,6 +39,9 @@ export function CommentForm({ inquiryId }: Props) {
         disabled={isPending}
         className="w-full text-sm border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:opacity-60"
       />
+      {errorMsg && (
+        <p className="text-xs text-red-500">{errorMsg}</p>
+      )}
       <button
         type="submit"
         disabled={isPending}

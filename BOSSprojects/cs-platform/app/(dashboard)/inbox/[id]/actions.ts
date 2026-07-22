@@ -109,6 +109,21 @@ export async function sendReply(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証エラー' }
 
+  // 送信時点でのロック競合チェック（楽観的ロック）
+  const db = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const LOCK_EXPIRE_MS = 30 * 60 * 1000
+  const expiredBefore = new Date(Date.now() - LOCK_EXPIRE_MS).toISOString()
+  const { data: lockCheck } = await db.from('inquiries').select('locked_by, locked_at').eq('id', inquiryId).single()
+  if (lockCheck?.locked_by && lockCheck.locked_by !== user.id && lockCheck.locked_at > expiredBefore) {
+    const { data: holder } = await db.from('users').select('display_name').eq('id', lockCheck.locked_by).single()
+    let name = holder?.display_name ?? null
+    if (!name) {
+      const { data: authUser } = await db.auth.admin.getUserById(lockCheck.locked_by)
+      name = authUser?.user?.email ?? '他のユーザー'
+    }
+    return { error: `${name}さんが対応中のため送信できません` }
+  }
+
   const { data: inq } = await supabase
     .from('inquiries')
     .select('source_channel, external_id, item_name, raw_payload, order_number, customer_name, subject, customer_profile_id')
@@ -639,16 +654,38 @@ export async function updateAssignee(inquiryId: string, assigneeId: string | nul
   revalidatePath('/inbox')
 }
 
-export async function addComment(inquiryId: string, body: string) {
+export async function addComment(inquiryId: string, body: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) return { error: '認証エラー（再ログインしてください）' }
 
-  await supabase.from('comments').insert({
+  // public.users に存在するか確認（外部キー制約でinsertが失敗するのを事前に防ぐ）
+  const { data: publicUser } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle()
+  if (!publicUser) {
+    // public.users に存在しない場合、service_role で自動登録
+    const db = createKnowledgeClient()
+    const { error: upsertErr } = await db.from('users').upsert({
+      id: user.id,
+      email: user.email ?? '',
+      display_name: user.email?.split('@')[0] ?? user.id,
+      is_active: true,
+    }, { onConflict: 'id' })
+    if (upsertErr) {
+      console.error('[addComment] users upsert error:', upsertErr)
+      return { error: `ユーザー登録エラー: ${upsertErr.message}` }
+    }
+  }
+
+  const { error } = await supabase.from('comments').insert({
     inquiry_id: inquiryId,
     author_id: user.id,
     body,
   })
+
+  if (error) {
+    console.error('[addComment] insert error:', error)
+    return { error: error.message }
+  }
 
   await supabase.from('activity_logs').insert({
     inquiry_id: inquiryId,
@@ -659,6 +696,7 @@ export async function addComment(inquiryId: string, body: string) {
   })
 
   revalidatePath(`/inbox/${inquiryId}`)
+  return {}
 }
 
 export async function generateAiDraft(inquiryId: string): Promise<{ draft: string; aiLogId: string } | { error: string }> {
