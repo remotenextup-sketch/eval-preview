@@ -4,8 +4,10 @@ import Link from 'next/link'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { updateStatus, toggleVote, deleteFeedback } from '../actions'
 import { DeleteFeedbackButton } from '../DeleteFeedbackButton'
+import { FeedbackCommentForm } from '../FeedbackCommentForm'
 
 type FeedbackVote = { id: string; user_id: string }
+type FeedbackComment = { id: string; author_email: string; body: string; created_at: string }
 type FeedbackItem = {
   id: string
   title: string
@@ -44,15 +46,23 @@ export default async function FeedbackDetailPage({ params }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data } = await supabase
-    .from('feedback_items')
-    .select('*, feedback_votes(id, user_id)')
-    .eq('id', id)
-    .single()
+  const [{ data }, { data: rawComments }] = await Promise.all([
+    supabase
+      .from('feedback_items')
+      .select('*, feedback_votes(id, user_id)')
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('feedback_comments')
+      .select('id, author_email, body, created_at')
+      .eq('feedback_id', id)
+      .order('created_at', { ascending: true }),
+  ])
 
   if (!data) notFound()
 
-  const item   = data as FeedbackItem
+  const item     = data as FeedbackItem
+  const comments = (rawComments ?? []) as FeedbackComment[]
   const votes  = item.feedback_votes ?? []
   const voted  = votes.some((v) => v.user_id === user.id)
   const catCls = CATEGORY_STYLE[item.category] ?? 'bg-gray-100 text-gray-600'
@@ -160,10 +170,32 @@ export default async function FeedbackDetailPage({ params }: Props) {
           </form>
         </div>
 
-        {/* Comments placeholder */}
+        {/* Comments */}
         <div className="mt-4 bg-white border border-gray-200 rounded-md px-5 py-4">
-          <p className="text-xs font-medium text-gray-500 mb-2">コメント</p>
-          <p className="text-xs text-gray-400">コメント機能は後日追加予定です。</p>
+          <p className="text-xs font-semibold text-gray-500 mb-3">
+            コメント {comments.length > 0 && <span className="text-gray-400 font-normal">({comments.length})</span>}
+          </p>
+          {comments.length > 0 && (
+            <div className="space-y-3 mb-4">
+              {comments.map((c) => (
+                <div key={c.id} className="flex gap-2.5">
+                  <div className="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0 flex items-center justify-center text-xs text-gray-600 font-medium">
+                    {c.author_email[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-xs font-medium text-gray-700">{c.author_email.split('@')[0]}</span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(c.created_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{c.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <FeedbackCommentForm feedbackId={id} />
         </div>
       </div>
     </div>

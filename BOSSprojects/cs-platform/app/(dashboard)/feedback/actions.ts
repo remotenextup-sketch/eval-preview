@@ -63,6 +63,25 @@ export async function deleteFeedback(id: string) {
   redirect('/feedback')
 }
 
+export async function addFeedbackComment(feedbackId: string, body: string): Promise<{ error?: string }> {
+  const supabase = (await createClient()) as AnyClient
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証エラー' }
+  if (!body.trim()) return { error: '本文が空です' }
+
+  const { error } = await supabase.from('feedback_comments').insert({
+    feedback_id: feedbackId,
+    author_id: user.id,
+    author_email: user.email ?? user.id,
+    body: body.trim(),
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/feedback/${feedbackId}`)
+  return {}
+}
+
 export async function toggleVote(feedbackId: string) {
   const supabase = (await createClient()) as AnyClient
   const { data: { user } } = await supabase.auth.getUser()
