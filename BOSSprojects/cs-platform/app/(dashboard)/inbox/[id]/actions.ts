@@ -60,14 +60,27 @@ export async function updateStatus(inquiryId: string, status: InquiryStatus, sno
 
   const { data: current } = await supabase
     .from('inquiries')
-    .select('status')
+    .select('status, assignee_id')
     .eq('id', inquiryId)
     .single()
+
+  // 未担当なら自動アサイン
+  const autoAssign = !current?.assignee_id
+  if (autoAssign) {
+    await supabase.from('activity_logs').insert({
+      inquiry_id: inquiryId,
+      actor_id: user.id,
+      action: 'assigned',
+      before_val: null,
+      after_val: { assignee_id: user.id, auto: true },
+    })
+  }
 
   const releaseLock = status === 'pending' || status === 'resolved'
 
   await supabase.from('inquiries').update({
     status,
+    ...(autoAssign ? { assignee_id: user.id } : {}),
     resolved_at: status === 'resolved' ? new Date().toISOString() : null,
     snooze_until: snooze && status === 'pending' ? tomorrowAt8amJST() : null,
     ...(releaseLock ? { locked_by: null, locked_at: null } : {}),
