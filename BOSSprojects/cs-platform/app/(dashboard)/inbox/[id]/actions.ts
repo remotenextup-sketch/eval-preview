@@ -109,8 +109,19 @@ export async function sendReply(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証エラー' }
 
-  // 送信時点でのロック競合チェック（楽観的ロック）
+  // public.users に存在しない場合は自動登録（外部キー制約対策）
   const db = createKnowledgeClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { data: publicUser } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle()
+  if (!publicUser) {
+    await db.from('users').upsert({
+      id: user.id,
+      email: user.email ?? '',
+      display_name: user.email?.split('@')[0] ?? user.id,
+      is_active: true,
+    }, { onConflict: 'id' })
+  }
+
+  // 送信時点でのロック競合チェック（楽観的ロック）
   const LOCK_EXPIRE_MS = 30 * 60 * 1000
   const expiredBefore = new Date(Date.now() - LOCK_EXPIRE_MS).toISOString()
   const { data: lockCheck } = await db.from('inquiries').select('locked_by, locked_at').eq('id', inquiryId).single()

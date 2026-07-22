@@ -55,6 +55,8 @@ export async function POST(req: NextRequest) {
     Array.isArray(body?.external_ids) ? body.external_ids : undefined
 
   const supabase = createServiceClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any
 
   // 対象 inquiry を取得（raw_payload.replies が非空配列のもの）
   let query = supabase
@@ -97,6 +99,7 @@ export async function POST(req: NextRequest) {
         const isCustomer = r.replyFrom === 'user'
         return {
           inquiry_id: inq.id,
+          source_channel: 'rakuten' as const,
           direction: (isCustomer ? 'inbound' : 'outbound') as 'inbound' | 'outbound',
           sender_type: (isCustomer ? 'customer' : 'staff') as 'customer' | 'staff',
           body: String(r.message ?? ''),
@@ -106,9 +109,9 @@ export async function POST(req: NextRequest) {
       }).filter((r) => r.body.trim().length > 0)
 
       if (replyRows.length > 0) {
-        const { error: upsertErr } = await supabase
+        const { error: upsertErr } = await db
           .from('inquiry_messages')
-          .upsert(replyRows, { onConflict: 'inquiry_id,external_message_id', ignoreDuplicates: true })
+          .upsert(replyRows, { onConflict: 'source_channel,external_message_id', ignoreDuplicates: true })
         if (upsertErr) {
           console.error('[resync-replies] upsert failed', inq.external_id, upsertErr)
           upsertError = upsertErr.message
