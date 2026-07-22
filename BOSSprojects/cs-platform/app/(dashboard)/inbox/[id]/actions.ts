@@ -135,6 +135,19 @@ export async function sendReply(
     return { error: `${name}さんが対応中のため送信できません` }
   }
 
+  // 未担当の場合はログインユーザーを自動アサイン
+  const { data: assigneeCheck } = await supabase.from('inquiries').select('assignee_id').eq('id', inquiryId).single()
+  if (!assigneeCheck?.assignee_id) {
+    await supabase.from('inquiries').update({ assignee_id: user.id }).eq('id', inquiryId)
+    await supabase.from('activity_logs').insert({
+      inquiry_id: inquiryId,
+      actor_id: user.id,
+      action: 'assigned',
+      before_val: null,
+      after_val: { assignee_id: user.id, auto: true },
+    })
+  }
+
   const { data: inq } = await supabase
     .from('inquiries')
     .select('source_channel, external_id, item_name, raw_payload, order_number, customer_name, subject, customer_profile_id')
