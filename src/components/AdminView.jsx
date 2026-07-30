@@ -9,7 +9,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { supabase } from './supabaseClient';
 import { RANK_OPTIONS } from '../constants';
 
-// ── ItemCommentsSection ──────────────────────────────────────────
+// ── ItemCommentsSection ────────────────────────────────────────────
 function ItemCommentsSection({ itemId, onCountChange }) {
   const [comments, setComments]     = useState([]);
   const [loading, setLoading]       = useState(false);
@@ -102,7 +102,7 @@ function ItemCommentsSection({ itemId, onCountChange }) {
   );
 }
 
-// ── AdminEditPane ────────────────────────────────────────────────
+// ── AdminEditPane ──────────────────────────────────────────────────
 function AdminEditPane({
   selectedAdminItem, adminForm, setAdminForm, savingAdminForm,
   onSave, onArchive, onDelete, onDeselect, onSelectNew, setItemCommentCounts, availableRanks, onBack,
@@ -171,7 +171,7 @@ function AdminEditPane({
         </div>
         <label className="flex items-center gap-3 cursor-pointer select-none">
           <input type="checkbox" checked={adminForm.is_salary_item} onChange={e => setAdminForm(f => ({ ...f, is_salary_item: e.target.checked }))} className="w-4 h-4 accent-indigo-600" />
-          <span className="text-sm text-slate-700 font-medium">昇給項目</span>
+          <span className="text-sm text-slate-700 font-medium">給与項目</span>
           <span className="text-xs text-slate-400">（評価に直結する項目）</span>
         </label>
         {!isNew && (
@@ -233,7 +233,7 @@ function AdminEditPane({
   );
 }
 
-// ── SortableItemRow ──────────────────────────────────────────────
+// ── SortableItemRow ────────────────────────────────────────────────
 function SortableItemRow({ item, isSelected, onSelect, commentCount, isDragActive }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const hasComments = commentCount > 0;
@@ -252,14 +252,12 @@ function SortableItemRow({ item, isSelected, onSelect, commentCount, isDragActiv
       style={{ transform: CSS.Transform.toString(transform), transition, ...inlineBg }}
       className={`flex items-center border-b border-slate-100 last:border-b-0 ${bgClass} ${isDragging ? 'shadow-md z-10 rounded-lg' : ''}`}
     >
-      {/* ドラッグハンドル */}
       <span
         {...attributes}
         {...listeners}
         className="px-2 py-3 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing select-none shrink-0 touch-none text-base leading-none"
         title="ドラッグして並び替え"
       >⠿</span>
-      {/* 項目ボタン */}
       <button
         onClick={() => !isDragActive && onSelect(item)}
         disabled={isDragActive}
@@ -271,7 +269,7 @@ function SortableItemRow({ item, isSelected, onSelect, commentCount, isDragActiv
           {hasComments && (
             <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">💬 {commentCount}</span>
           )}
-          {item.is_salary_item && <span className="text-xs bg-amber-100 text-amber-700 px-1 py-0.5 rounded">昇給</span>}
+          {item.is_salary_item && <span className="text-xs bg-amber-100 text-amber-700 px-1 py-0.5 rounded">給与</span>}
           {item.status !== 'active' && <span className="text-xs bg-slate-100 text-slate-400 px-1 py-0.5 rounded">{item.status}</span>}
         </div>
         <span className="text-slate-300 text-xs mt-0.5 shrink-0">›</span>
@@ -280,21 +278,17 @@ function SortableItemRow({ item, isSelected, onSelect, commentCount, isDragActiv
   );
 }
 
-// ── AdminLeftPane ────────────────────────────────────────────────
+// ── AdminLeftPane ──────────────────────────────────────────────────
 function AdminLeftPane({
   availableRanks, adminItems, selectedAdminItem, onSelectAdminItem,
   rankCommentSummary, itemCommentCounts, proposals, setMtgMode,
   savingProposal, proposalContent, setProposalContent, onSaveProposal,
   onAdoptProposal, onUpdateProposalStatus, selectedUser, addCustomRank,
 }) {
-  // ランク表示順（↑↓ボタンで変更）
   const [rankOrder, setRankOrder] = useState([...availableRanks]);
-  // 各ランク内の項目ローカル順序
   const [localRankItems, setLocalRankItems] = useState({});
-  // 順序変更済みで未保存のランク
   const [dirtyRanks, setDirtyRanks] = useState(new Set());
   const [savingOrder, setSavingOrder] = useState(false);
-  // ドラッグ中のアイテムID
   const [activeDragId, setActiveDragId] = useState(null);
   const [jumpRankIdx, setJumpRankIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -319,7 +313,6 @@ function AdminLeftPane({
     jumpToRank(filteredRankGroups[nextIdx].rank);
   };
 
-  // availableRanks 変化時に rankOrder を同期
   useEffect(() => {
     setRankOrder(prev => {
       const next = prev.filter(r => availableRanks.includes(r));
@@ -328,7 +321,6 @@ function AdminLeftPane({
     });
   }, [availableRanks]);
 
-  // adminItems 変化時に localRankItems を再初期化
   useEffect(() => {
     const grouped = {};
     availableRanks.forEach(rank => {
@@ -340,7 +332,6 @@ function AdminLeftPane({
     setDirtyRanks(new Set());
   }, [adminItems, availableRanks]);
 
-  // 表示するランクグループ（アイテムがあるランクのみ）
   const rankGroups = rankOrder
     .map(rank => ({ rank, items: localRankItems[rank] || [] }))
     .filter(g => g.items.length > 0);
@@ -356,7 +347,6 @@ function AdminLeftPane({
         .filter(g => g.items.length > 0)
     : rankGroups;
 
-  // ランクグループの ↑/↓ 移動
   const moveRankGroup = (rank, direction) => {
     const groupIdx = rankGroups.findIndex(g => g.rank === rank);
     const targetIdx = groupIdx + direction;
@@ -372,7 +362,6 @@ function AdminLeftPane({
     });
   };
 
-  // DnD センサー（5px 移動で開始）
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const handleDragStart = ({ active }) => setActiveDragId(active.id);
@@ -396,12 +385,10 @@ function AdminLeftPane({
     setDirtyRanks(prev => new Set([...prev, targetRank]));
   };
 
-  // 順番を DB に保存（evaluation_items.sort_order を更新。no は変更しない）
   const saveOrder = async (rank) => {
     setSavingOrder(true);
     const items = localRankItems[rank] || [];
 
-    // 既存の sort_order 値を昇順に並べて再割り当て（no は一切変更しない）
     const existingSortOrders = (adminItems || [])
       .filter(i => i.rank === rank)
       .map(i => i.sort_order ?? i.no ?? 0)
@@ -495,7 +482,6 @@ function AdminLeftPane({
             )}
             {filteredRankGroups.map(({ rank, items: rankItems }, groupIdx) => (
               <div key={rank} ref={el => { rankGroupRefs.current[rank] = el; }} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                {/* ランクグループヘッダー */}
                 <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-600">{rank}</span>
                   <div className="flex items-center gap-1.5">
@@ -523,7 +509,6 @@ function AdminLeftPane({
                     >↓</button>
                   </div>
                 </div>
-                {/* ソータブルアイテムリスト */}
                 <SortableContext items={rankItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
                   <div>
                     {rankItems.map(item => (
@@ -543,7 +528,6 @@ function AdminLeftPane({
           </div>
         </DndContext>
 
-        {/* 改善提案ボード */}
         <div className="px-4 pb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-slate-700">
@@ -589,7 +573,6 @@ function AdminLeftPane({
           </div>
         </div>
 
-        {/* ランク管理 */}
         <div className="px-4 pb-6 mt-2">
           <div className="border-t border-slate-200 pt-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">ランク管理</h3>
@@ -613,7 +596,7 @@ function AdminLeftPane({
   );
 }
 
-// ── MtgOverlay ───────────────────────────────────────────────────
+// ── MtgOverlay ─────────────────────────────────────────────────────
 function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalStatus }) {
   const openProposals = proposals.filter(p => p.status === 'open');
   return (
@@ -648,7 +631,7 @@ function MtgOverlay({ proposals, setMtgMode, onAdoptProposal, onUpdateProposalSt
   );
 }
 
-// ── AdminSpreadsheet ─────────────────────────────────────────────
+// ── AdminSpreadsheet ───────────────────────────────────────────────
 function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts, selectedAdminItem, onSelectAdminItem, availableRanks }) {
   const [loading, setLoading]         = useState(false);
   const [rankFilter, setRankFilter]   = useState('all');
@@ -723,7 +706,6 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* ランクタブ */}
       <div className="px-3 pt-2 pb-0 bg-white border-b border-slate-200 shrink-0 overflow-x-auto">
         <div className="flex gap-1 min-w-max pb-2">
           <button onClick={() => setRankFilter('all')}
@@ -739,7 +721,6 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
         </div>
       </div>
 
-      {/* 検索・フィルターバー */}
       <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0 flex items-center gap-2">
         <div className="relative flex-1 max-w-xs">
           <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -758,7 +739,6 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
         {loading && <span className="text-xs text-slate-300">読込中...</span>}
       </div>
 
-      {/* テーブル */}
       <div className="flex-1 overflow-auto">
         <table className="border-collapse text-xs w-full" style={{ tableLayout: 'fixed' }}>
           <colgroup>
@@ -806,7 +786,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
                   <td className="px-3 py-2.5 border-r border-slate-100 align-top overflow-hidden">
                     <p className="text-slate-800 font-medium leading-snug line-clamp-4">{item.item_name}</p>
                     <div className="flex gap-1 mt-1 flex-wrap">
-                      {item.is_salary_item && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">昇給</span>}
+                      {item.is_salary_item && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">給与</span>}
                       {item.status !== 'active' && <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">{item.status}</span>}
                     </div>
                   </td>
@@ -846,7 +826,7 @@ function AdminSpreadsheet({ adminItems, itemCommentCounts, setItemCommentCounts,
   );
 }
 
-// ── AdminView (exported) ─────────────────────────────────────────
+// ── AdminView (exported) ───────────────────────────────────────────
 export default function AdminView({
   adminItems, selectedAdminItem, onSelectAdminItem,
   adminForm, setAdminForm, savingAdminForm,
@@ -877,8 +857,26 @@ export default function AdminView({
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-hidden flex flex-col bg-white">
+    <div className="flex-1 flex overflow-hidden">
+      {/* 左ペイン: 項目一覧 */}
+      <div className={`w-72 shrink-0 border-r border-slate-200 flex flex-col overflow-hidden bg-white ${
+        mobileShowAdminEdit ? 'hidden md:flex' : 'flex'
+      }`}>
+        <AdminLeftPane {...leftPaneProps} />
+      </div>
+
+      {/* 中央ペイン: 項目編集フォーム */}
+      <div className={`w-80 shrink-0 border-r border-slate-200 flex flex-col overflow-hidden bg-white ${
+        mobileShowAdminEdit ? 'flex' : 'hidden md:flex'
+      }`}>
+        <AdminEditPane
+          {...editPaneProps}
+          onBack={mobileShowAdminEdit ? () => setMobileShowAdminEdit(false) : undefined}
+        />
+      </div>
+
+      {/* 右ペイン: スプレッドシート */}
+      <div className="flex-1 flex flex-col overflow-hidden bg-white hidden lg:flex">
         <AdminSpreadsheet {...spreadsheetProps} />
       </div>
 
