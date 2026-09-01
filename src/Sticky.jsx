@@ -9,7 +9,7 @@ export default function Sticky() {
   const [error, setError]               = useState(null);
   const [debugInfo, setDebugInfo]       = useState('');
 
-  // ユーザー一覧を入社順で取得し、前回のユーザーを復元
+  // ユーザー一覧を入社順で取得し、最初のユーザーを復元
   useEffect(() => {
     supabase
       .from('users')
@@ -46,7 +46,7 @@ export default function Sticky() {
     setDebugInfo('');
 
     const pName = selectedUser.progress_name ?? selectedUser.name;
-    console.log('[Sticky] fetch start — user:', selectedUser.name, '/ pName:', pName, '/ rank:', selectedUser.rank);
+    console.log('[Sticky] fetch start → user:', selectedUser.name, '/ pName:', pName, '/ rank:', selectedUser.rank);
 
     (async () => {
       try {
@@ -86,7 +86,7 @@ export default function Sticky() {
 
         if (itemErr) throw itemErr;
 
-        // ③ rank+no の複合キーで優先マッチ、なければ no のみでフォールバック
+        // ③ rank+no の複合キーで優先し、なければ no のみでフォールバック
         const byRankNo = {};
         const byNo     = {};
         for (const d of (itemDefs || [])) {
@@ -131,13 +131,13 @@ export default function Sticky() {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #FFF9C4 0%, #FFF176 100%)' }}>
+    <div className="min-h-screen min-w-[360px]" style={{ background: 'linear-gradient(135deg, #FFF9C4 0%, #FFF176 100%)' }}>
       {/* ヘッダー */}
       <div
-        className="px-3 py-2.5 border-b border-yellow-300 flex items-center gap-2 sticky top-0"
+        className="px-4 py-2.5 border-b border-yellow-300 flex items-center gap-2 sticky top-0"
         style={{ background: 'rgba(255, 249, 196, 0.95)', backdropFilter: 'blur(4px)' }}
       >
-        <span className="text-base">📌</span>
+        <span className="text-base">📝</span>
         <select
           value={selectedUser?.id ?? ''}
           onChange={e => {
@@ -161,13 +161,13 @@ export default function Sticky() {
       </div>
 
       {/* 説明テキスト */}
-      <p className="px-3 pt-2 pb-0 text-[10px] text-yellow-600 leading-relaxed">
-        個人タブでステータスを「取り組み中」にした項目がここに表示されます
+      <p className="px-4 pt-2 pb-0 text-[10px] text-yellow-600 leading-relaxed">
+        個人ごとでステータスが「取り組み中」にある項目がここに表示されます
       </p>
 
       {/* 件数バッジ */}
       {!loading && !error && (
-        <div className="px-3 py-1.5 flex items-center gap-1.5">
+        <div className="px-4 py-1.5 flex items-center gap-1.5">
           <span className="text-xs font-semibold text-yellow-700">取り組み中</span>
           <span className="text-xs bg-yellow-400 text-yellow-900 font-bold px-1.5 py-0.5 rounded-full">
             {items.length}件
@@ -176,7 +176,7 @@ export default function Sticky() {
       )}
 
       {/* 項目リスト */}
-      <div className="px-2 pb-4">
+      <div className="px-3 pb-4">
         {loading ? (
           <p className="text-xs text-yellow-600 text-center py-8">読み込み中...</p>
         ) : error ? (
@@ -198,7 +198,7 @@ export default function Sticky() {
               <button
                 key={item.id}
                 onClick={() => handleItemClick(item)}
-                className="w-full text-left px-3 py-2.5 rounded-lg border border-yellow-300 bg-white/60 hover:bg-white/90 transition-all shadow-sm active:scale-[0.98] group"
+                className="w-full text-left px-4 py-2.5 rounded-lg border border-yellow-300 bg-white/60 hover:bg-white/90 transition-all shadow-sm active:scale-[0.98] group"
               >
                 <p className="text-xs font-medium text-slate-700 leading-snug group-hover:text-indigo-700 transition-colors">
                   {item.item_name}
